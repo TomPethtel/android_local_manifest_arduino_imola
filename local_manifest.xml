@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+	<!-- Remotes -->
+	<remote name="github_ssh" fetch="ssh://git@github.com"/>
+
+	<!-- Device tree -->
+	<project name="YAJATapps/android_device_arduino_imola" path="device/arduino/imola" remote="github_ssh" revision="lineage-23.2"/>
+	<project name="YAJATapps/android_kernel_arduino_imola" path="kernel/arduino/imola" remote="github_ssh" revision="lineage-23.2"/>
+	<project name="YAJATapps/android_vendor_arduino_imola" path="vendor/arduino/imola" remote="github_ssh" revision="lineage-23.2"/>
+
+
+</manifest>
