@@ -15,4 +15,7 @@
 
 	<!-- Qualcomm EDL flashing firmware & tools (Armbian) -->
 	<project name="armbian/qcombin" path="vendor/arduino/imola/qcombin" remote="github" revision="main"/>
+
+	<!-- Hardware Control App -->
+	<project name="YAJATapps/WiringUno" path="packages/apps/WiringUno" remote="github" revision="main"/>
 </manifest>

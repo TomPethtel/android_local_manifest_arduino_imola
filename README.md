@@ -32,6 +32,7 @@ This will pull:
 - `kernel/arduino/imola` (Linux 6.18 Android Common Kernel)
 - `vendor/arduino/imola` (Firmware blobs, Mesa 3D Turnip/Freedreno, U-Boot bootloader)
 - `vendor/arduino/imola/qcombin` (Qualcomm Firehose EDL programmer & partition XMLs)
+- `packages/apps/WiringUno` (Hardware GPIO & RGB LED control companion app)
 
 ---
 
