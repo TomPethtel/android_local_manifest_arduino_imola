@@ -1,14 +1,14 @@
-# LineageOS 23.2 (Android 16) for Arduino Uno Q (Imola)
+# LineageOS 24 (Android 17) for Arduino Uno Q (Imola)
 
-Local manifest to set up and sync repositories for building LineageOS 23.2 (Android 16) on the Arduino Uno Q (`imola`).
+Local manifest to set up and sync repositories for building LineageOS 24 (Android 17) on the Arduino Uno Q (`imola`).
 
 ---
 
-## 1. Initialize LineageOS 23.2 Source Tree
+## 1. Initialize LineageOS 24 Source Tree
 
 ```bash
-mkdir -p lineage-23.2 && cd lineage-23.2
-repo init -u https://github.com/LineageOS/android.git -b lineage-23.2 --git-lfs --depth=1
+mkdir -p lineage-24 && cd lineage-24
+repo init -u https://github.com/LineageOS/android.git -b lineage-24.0 --git-lfs --depth=1
 ```
 
 ---
@@ -16,7 +16,7 @@ repo init -u https://github.com/LineageOS/android.git -b lineage-23.2 --git-lfs 
 ## 2. Add Local Manifest
 
 ```bash
-curl -o .repo/local_manifests/local_manifest.xml -L https://raw.githubusercontent.com/YAJATapps/android_local_manifest_arduino_imola/refs/heads/lineage-23.2/local_manifest.xml --create-dirs
+curl -o .repo/local_manifests/local_manifest.xml -L https://raw.githubusercontent.com/YAJATapps/android_local_manifest_arduino_imola/refs/heads/lineage-24/local_manifest.xml --create-dirs
 ```
 
 ---
