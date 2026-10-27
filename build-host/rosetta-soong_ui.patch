@@ -1,0 +1,34 @@
+diff --git a/ui/build/ninja.go b/ui/build/ninja.go
+index d608b9a..88faf51 100644
+--- a/ui/build/ninja.go
++++ b/ui/build/ninja.go
+@@ -273,6 +273,8 @@ func runNinja(ctx Context, config Config, ninjaArgs []string) {
+ 			"PWD",
+ 			// https://docs.python.org/3/using/cmdline.html#envvar-PYTHONDONTWRITEBYTECODE
+ 			"PYTHONDONTWRITEBYTECODE",
++			// Local: pass GODEBUG=asyncpreemptoff=1 to siso and Go host tools; Go async preemption signals crash under Rosetta.
++			"GODEBUG",
+ 			"TMPDIR",
+ 			"USER",
+ 
+diff --git a/ui/build/soong.go b/ui/build/soong.go
+index 4521b4a..8fd63ed 100644
+--- a/ui/build/soong.go
++++ b/ui/build/soong.go
+@@ -215,6 +215,16 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
+ 
+ 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
+ 	invocationEnv := make(map[string]string)
++	// Local: let the caller cap the Go heap of soong_build (Rosetta/28GiB VM).
++	if memLimit := os.Getenv("SOONG_BUILD_GOMEMLIMIT"); memLimit != "" {
++		invocationEnv["GOMEMLIMIT"] = memLimit
++	}
++	if gogc := os.Getenv("SOONG_BUILD_GOGC"); gogc != "" {
++		invocationEnv["GOGC"] = gogc
++	}
++	if godebug := os.Getenv("GODEBUG"); godebug != "" {
++		invocationEnv["GODEBUG"] = godebug
++	}
+ 	if pb.debugPort != "" {
+ 		//debug mode
+ 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,
