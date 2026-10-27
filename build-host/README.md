@@ -92,11 +92,10 @@ Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch 
 * `build/soong`: install into `out/host/linux-arm64`, stage `libc_musl.so` for built tools on a forced-musl host, Rust host prebuilts from `linux-arm64` with the `linux_musl_arm64` target, nsjail from the arm64 dir.
 * `prebuilts/build-tools` and `prebuilts/jdk/jdk21`: enable bison/flex/m4/make/javap on arm64.
 * `system/sepolicy`: `getopt` results into `int` (plain `char` is unsigned on aarch64).
+* `prebuilts/rust-toolchain/linux-x86`: no from-source sysroot on musl_arm64; `vendor/lineage`: kernel host tools from the distro.
 
-Status (2026-10-27): analysis and ~70% of the compile pass natively at ~20 steps/s. Still open:
-
-* Rust host static libs (`generated_rust_staticlib`) fail with duplicate `core` candidates: port the blog's
-  sysroot pinning in `build/soong/rust/builder.go` `TransformRlibstoStaticlib`.
-* The kernel's host tools (resolve_btfids, sign-file) link against `prebuilts/kernel-build-tools/linux-x86/lib64`,
-  which is x86; an arm64 kernel-build-tools dir or HOSTLDFLAGS pointing at the guest's libelf/libcrypto is needed.
-* The LFI-verifier non-fatal change from the blog has not been needed yet.
+Status (2026-10-27): analysis and ~70% of the compile pass natively at ~20 steps/s. Fixed since, awaiting a
+full run to confirm: duplicate `core` in generated Rust staticlibs (the from-source musl_arm64 Rust sysroot is
+now disabled in favour of the prebuilt one, step 17) and the kernel's host tools linking against the x86
+`kernel-build-tools` libraries (step 18 uses the distro's libelf/libcrypto, lz4 and pahole). The LFI-verifier
+non-fatal change from the blog has not been needed yet.
