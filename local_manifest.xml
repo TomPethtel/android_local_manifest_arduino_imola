@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
 	<!-- Remotes -->
-	<remote name="github" fetch="https://github.com"/>
+	<remote name="gh_imola" fetch="https://github.com"/>
 	<remote name="github_ssh" fetch="ssh://git@github.com"/>
 
 	<!-- Device tree -->
-	<project name="YAJATapps/android_device_arduino_imola" path="device/arduino/imola" remote="github" revision="lineage-24"/>
+	<project name="YAJATapps/android_device_arduino_imola" path="device/arduino/imola" remote="gh_imola" revision="lineage-24"/>
 
 	<!-- Kernel source -->
-	<project name="YAJATapps/android_kernel_arduino_imola" path="kernel/arduino/imola" remote="github" revision="android17-6.18"/>
+	<project name="YAJATapps/android_kernel_arduino_imola" path="kernel/arduino/imola" remote="gh_imola" revision="android17-6.18"/>
 
 	<!-- Vendor blobs and prebuilts -->
-	<project name="YAJATapps/android_vendor_arduino_imola" path="vendor/arduino/imola" remote="github" revision="lineage-24"/>
+	<project name="YAJATapps/android_vendor_arduino_imola" path="vendor/arduino/imola" remote="gh_imola" revision="lineage-24"/>
 
 	<!-- Qualcomm EDL flashing firmware & tools (Armbian) -->
-	<project name="armbian/qcombin" path="vendor/arduino/imola/qcombin" remote="github" revision="main"/>
+	<project name="armbian/qcombin" path="vendor/arduino/imola/qcombin" remote="gh_imola" revision="main"/>
 
 	<!-- Hardware Control App -->
-	<project name="YAJATapps/WiringUno" path="packages/apps/WiringUno" remote="github" revision="lineage-24"/>
+	<project name="YAJATapps/WiringUno" path="packages/apps/WiringUno" remote="gh_imola" revision="lineage-24"/>
 </manifest>

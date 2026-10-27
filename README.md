@@ -16,7 +16,7 @@ repo init -u https://github.com/LineageOS/android.git -b lineage-24.0 --git-lfs 
 ## 2. Add Local Manifest
 
 ```bash
-curl -o .repo/local_manifests/local_manifest.xml -L https://raw.githubusercontent.com/YAJATapps/android_local_manifest_arduino_imola/refs/heads/lineage-24/local_manifest.xml --create-dirs
+curl -o .repo/local_manifests/local_manifest.xml -L https://raw.githubusercontent.com/TomPethtel/android_local_manifest_arduino_imola/refs/heads/lineage-24/local_manifest.xml --create-dirs
 ```
 
 ---
@@ -42,3 +42,9 @@ This will pull:
 ./device/arduino/imola/patches.sh
 ```
 
+
+---
+
+## Building on an Apple Silicon Mac
+
+See [`build-host/README.md`](build-host/README.md) for the Lima/Rosetta VM recipe, the build scripts, and the experimental native arm64 host setup.
