@@ -239,3 +239,15 @@ for t in bison flex m4; do
   fi
 done
 echo "CLANG SHIM + BUILD-TOOLS OK"
+
+# 16. Rust host toolchain must be the MUSL build (rustc only loads proc-macro dylibs built for its own host
+#     triple, and Soong builds host crates for aarch64-unknown-linux-musl). The upstream musl rustc needs a
+#     musl-built libgcc_s.so.1 that Ubuntu does not ship; Alpine's libgcc package provides one.
+rl=prebuilts/rust-toolchain/linux-arm64/1.93.1/lib
+if [ -d "$rl" ] && [ ! -f "$rl/libgcc_s.so.1" ]; then
+  apk=$(curl -sL https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64/ | grep -oE 'libgcc-[0-9][^"]*\.apk' | head -1)
+  tmp=$(mktemp -d); curl -sSL -o "$tmp/libgcc.apk" "https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64/$apk"
+  tar -xzf "$tmp/libgcc.apk" -C "$tmp" 2>/dev/null || true
+  cp "$tmp/usr/lib/libgcc_s.so.1" "$rl/" && echo "placed musl libgcc_s.so.1 in $rl"; rm -rf "$tmp"
+fi
+echo "RUST MUSL GLUE OK"

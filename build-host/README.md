@@ -77,10 +77,12 @@ git clone --filter=blob:none --depth=1 --sparse -b mirror-goog-main-prebuilts \
 git clone --filter=blob:none --depth=1 -b mirror-goog-llvm-r596125-release \
   https://android.googlesource.com/platform/prebuilts/go/linux-arm64 prebuilts/go/linux-arm64   # go1.25.4
 # JDK 21: Temurin aarch64 tarball extracted to prebuilts/jdk/jdk21/linux-arm64
-# Rust 1.93.1: the aarch64-unknown-linux-gnu host toolchain installed to
-#   prebuilts/rust-toolchain/linux-arm64/1.93.1 with rust-std for aarch64-unknown-linux-musl,
-#   aarch64-linux-android and armv7-linux-androideabi added, plus linux-musl-x86's Android.bp
-#   copied next to it. (The musl host toolchain needs a musl libgcc_s the guest does not have.)
+# Rust 1.93.1: the aarch64-unknown-linux-MUSL host toolchain (rust-1.93.1-aarch64-unknown-linux-musl.tar.xz,
+#   install.sh --prefix=prebuilts/rust-toolchain/linux-arm64/1.93.1) with rust-std for aarch64-linux-android
+#   and armv7-linux-androideabi added, plus linux-musl-x86's Android.bp copied next to it. It must be the musl
+#   build: rustc only loads proc-macro dylibs built for its own host triple, and Soong builds host crates for
+#   aarch64-unknown-linux-musl. arm64-patches.sh drops Alpine's musl libgcc_s.so.1 into its lib/ and wraps
+#   rustc with RUSTC_BOOTSTRAP=1.
 sudo apt-get install musl       # loader for the musl-linked arm64 build-tools (bison, m4, ckati, …)
 ```
 
@@ -91,6 +93,10 @@ Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch 
 * `prebuilts/build-tools` and `prebuilts/jdk/jdk21`: enable bison/flex/m4/make/javap on arm64.
 * `system/sepolicy`: `getopt` results into `int` (plain `char` is unsigned on aarch64).
 
-Not yet carried over from the blog: the Rust static-lib sysroot pinning, the clang shim that strips
-x86 SIMD flags Cronet leaks into host builds, and the LFI-verifier non-fatal change. Expect to need
-some of them once the build runs.
+Status (2026-10-27): analysis and ~70% of the compile pass natively at ~20 steps/s. Still open:
+
+* Rust host static libs (`generated_rust_staticlib`) fail with duplicate `core` candidates: port the blog's
+  sysroot pinning in `build/soong/rust/builder.go` `TransformRlibstoStaticlib`.
+* The kernel's host tools (resolve_btfids, sign-file) link against `prebuilts/kernel-build-tools/linux-x86/lib64`,
+  which is x86; an arm64 kernel-build-tools dir or HOSTLDFLAGS pointing at the guest's libelf/libcrypto is needed.
+* The LFI-verifier non-fatal change from the blog has not been needed yet.
