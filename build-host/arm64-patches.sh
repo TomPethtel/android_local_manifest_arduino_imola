@@ -63,6 +63,10 @@ patch("build/soong/rust/toolchain_library.go",
       '\t\t} else if platform == "darwin" && ctx.Config().BuildOS == android.Darwin {\n',
       '\t\t} else if platform == "linux-arm64" && ctx.Config().BuildOS == android.LinuxMusl && ctx.Config().BuildArch == android.Arm64 {\n\t\t\tp.Target.Linux_musl_arm64.addPrebuiltToTarget(ctx, name, rustDir, "linux-arm64", "aarch64-unknown-linux-musl", rlib, solib)\n\t\t} else if platform == "darwin" && ctx.Config().BuildOS == android.Darwin {\n')
 
+patch("build/soong/rust/toolchain_library.go",
+      '\t\t} else if platform == "linux-musl-x86" && ctx.Config().BuildOS == android.LinuxMusl {\n',
+      '\t\t} else if platform == "linux-musl-x86" && ctx.Config().BuildOS == android.LinuxMusl && ctx.Config().BuildArch != android.Arm64 {\n')
+
 # 8. soong_ui sandbox: nsjail from the host's own prebuilt dir
 sp = pathlib.Path("build/soong/ui/build/sandbox_linux.go"); s = sp.read_text()
 if "nsjailPath = \"prebuilts/build-tools/linux-x86/bin/nsjail\"" in s:
@@ -112,3 +116,88 @@ patch("system/sepolicy/tools/sepolicy-analyze/attribute.c", '    char ch;\n', ' 
 patch("system/sepolicy/tools/sepolicy-analyze/neverallow.c", '    char ch;\n', '    int ch;\n')
 print("ALL PATCHES OK")
 PY
+
+# 12. prebuilts/clang/host/linux-x86 Soong plugin: teach it about the linux-arm64 prebuilts.
+#     The linux-arm64 Android.bp (from AOSP main) uses llvm_host_arch_filegroup, which our older plugin lacks.
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("prebuilts/clang/host/linux-x86/soong/clangprebuilts.go"); s = p.read_text()
+if "llvm_host_arch_filegroup" in s:
+    print("already: clangprebuilts.go")
+else:
+    # register the module type
+    a = '\tandroid.RegisterModuleType("llvm_tools_filegroup",\n\t\tllvmToolsFilegroupFactory)\n'
+    assert s.count(a) == 1
+    s = s.replace(a, a + '\tandroid.RegisterModuleType("llvm_host_arch_filegroup",\n\t\tllvmHostArchFileGroupFactory)\n')
+    # helpers + filegroup implementation (ported from AOSP main)
+    s += '''
+// ---- Local: native arm64 host support, ported from AOSP main's clangprebuilts.go ----
+
+// hasLinuxArm64ClangPrebuilt returns true if clang prebuilts are present for linux-arm64.
+func hasLinuxArm64ClangPrebuilt(ctx android.LoadHookContext) bool {
+	return android.ExistentPathForSource(ctx, "prebuilts/clang/host/linux-arm64", getClangPrebuiltDir(ctx), "bin/clang").Valid()
+}
+
+type llvmHostArchFileGroupProperties struct {
+	Lib *string
+}
+
+type llvmHostArchFileGroup struct {
+	android.Module
+
+	properties llvmHostArchFileGroupProperties
+}
+
+func llvmHostArchFileGroupHook(ctx android.LoadHookContext, fileGroupProps *llvmHostArchFileGroupProperties) {
+	clangDir := getClangPrebuiltDir(ctx)
+	lib := proptools.String(fileGroupProps.Lib)
+	if !android.ExistentPathForSource(ctx, ctx.ModuleDir(), clangDir, lib).Valid() {
+		return
+	}
+	type props struct {
+		Srcs []string
+	}
+	p := &props{}
+	p.Srcs = []string{path.Join(clangDir, lib)}
+	ctx.AppendProperties(p)
+}
+
+func llvmHostArchFileGroupFactory() android.Module {
+	module := &llvmHostArchFileGroup{
+		Module: android.FileGroupFactory(),
+	}
+	module.AddProperties(&module.properties)
+	android.AddLoadHook(module, func(ctx android.LoadHookContext) {
+		llvmHostArchFileGroupHook(ctx, &module.properties)
+	})
+	return module
+}
+'''
+    # llvm_prebuilt_build_tool: arm64 host tools come from the linux-arm64 filegroups
+    a = '\tp.Target.Linux.Enabled = proptools.BoolPtr(true)\n\tp.Target.Linux.Src = &src\n\tp.Target.Linux.Deps = deps\n\tctx.AppendProperties(p)\n'
+    assert s.count(a) == 1
+    s = s.replace('\t\t\tLinux struct {\n\t\t\t\tEnabled *bool\n\t\t\t\tSrc     *string\n\t\t\t\tDeps    []string\n\t\t\t}\n\t\t}\n\t}\n\tp := &props{}\n\tp.Enabled = proptools.BoolPtr(false)\n\tp.Target.Linux.Enabled',
+                  '\t\t\tLinux struct {\n\t\t\t\tEnabled *bool\n\t\t\t\tSrc     *string\n\t\t\t\tDeps    []string\n\t\t\t}\n\t\t\tHost_linux_arm64 struct {\n\t\t\t\tEnabled *bool\n\t\t\t\tSrc     *string\n\t\t\t\tDeps    []string\n\t\t\t}\n\t\t}\n\t}\n\tp := &props{}\n\tp.Enabled = proptools.BoolPtr(false)\n\tp.Target.Linux.Enabled')
+    s = s.replace(a, '\tp.Target.Linux.Enabled = proptools.BoolPtr(true)\n\tp.Target.Linux.Src = &src\n\tp.Target.Linux.Deps = deps\n\tif hasLinuxArm64ClangPrebuilt(ctx) {\n\t\tp.Target.Host_linux_arm64.Enabled = proptools.BoolPtr(true)\n\t\tp.Target.Host_linux_arm64.Src = proptools.StringPtr(":" + name + "_host_linux_arm64")\n\t\tp.Target.Host_linux_arm64.Deps = []string{":llvm_tools_libc_musl_host_linux_arm64"}\n\t}\n\tctx.AppendProperties(p)\n')
+    assert "Host_linux_arm64.Enabled" in s and "Host_linux_arm64 struct" in s
+    # libclang-cpp_host on an arm64 host
+    a = '\t} else if moduleName == "libclang-cpp_host" {\n'
+    assert s.count(a) == 1
+    i = s.index(a); j = s.index("\n\t}", i + len(a))
+    block = s[i:j]
+    assert "Linux_musl_arm64" not in block
+    s = s[:j] + '\n\t\tif hasLinuxArm64ClangPrebuilt(ctx) {\n\t\t\tp.Target.Linux_musl_arm64.Srcs = []string{":libclang-cpp_host_linux_arm64"}\n\t\t}' + s[j:]
+    p.write_text(s); print("patched: clangprebuilts.go")
+PY
+
+# 13. Toolchain glue (not source patches):
+#   - prebuilts/jdk/jdk8 has only linux-x86; its jars are arch-neutral, so alias linux-arm64 to it (guava needs rt.jar/jce.jar).
+#   - upstream stable rustc rejects the -Z flags Soong passes (AOSP's own rustc build accepts them): wrap it with RUSTC_BOOTSTRAP=1.
+[ -e prebuilts/jdk/jdk8/linux-arm64 ] || { ln -s linux-x86 prebuilts/jdk/jdk8/linux-arm64 && echo "linked: prebuilts/jdk/jdk8/linux-arm64"; }
+rb=prebuilts/rust-toolchain/linux-arm64/1.93.1/bin
+if [ -f "$rb/rustc" ] && [ ! -f "$rb/rustc.real" ]; then
+  mv "$rb/rustc" "$rb/rustc.real"
+  printf '#!/bin/sh\n# Upstream stable rustc rejects the -Z flags Soong passes; AOSP'"'"'s own rustc build accepts them.\nRUSTC_BOOTSTRAP=1 exec "$(dirname "$0")/rustc.real" "$@"\n' > "$rb/rustc"
+  chmod +x "$rb/rustc"; echo "wrapped: $rb/rustc"
+fi
+echo "TOOLCHAIN GLUE OK"
