@@ -1,7 +1,8 @@
 #!/bin/bash
 # Native arm64 build of LineageOS 24 for imola. Separate OUT_DIR so the Rosetta/x86 build in out/ is untouched.
-# NOTE: do not put ~/bin (the uname->x86_64 shim) on PATH here.
+# Ubuntu's ~/.profile puts ~/bin (the uname->x86_64 shim) on PATH; take it off so the tree sees aarch64.
 set -o pipefail
+export PATH=$(printf "%s" "$PATH" | tr ":" "\n" | grep -vx "$HOME/bin" | paste -sd:)
 cd ~/lineage-24 || exit 1
 export OUT_DIR=out-arm64
 export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache CCACHE_DIR=$HOME/.ccache-arm64
