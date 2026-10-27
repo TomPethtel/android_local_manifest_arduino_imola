@@ -274,3 +274,16 @@ else
   echo "already: $f"
 fi
 grep -q 'KERNEL_BUILD_TOOLS_BIN)/pahole' "$f" && echo "KERNEL HOST TOOLS OK"
+
+# 19. system/librustutils/no_std: the `rust_static_std` cc_defaults link the from-source `libstd` on musl_arm64
+#     hosts (every other host uses `prebuilt_libstd`). With the from-source sysroot disabled (step 17), use the
+#     prebuilt here too, or cc host libraries like libunwindstack report "missing dependencies: libstd".
+perl -0pi -e 's/(musl_arm64: \{\s*whole_static_libs: \[\s*")libstd(",)/${1}prebuilt_libstd$2/' system/librustutils/no_std/Android.bp
+grep -q 'prebuilt_libstd' system/librustutils/no_std/Android.bp && echo "RUST STATIC STD OK"
+
+# 20. bindgen is pinned to clang-r584948 (build/soong/rust/bindgen.go); the arm64 clang mirror only carries
+#     clang-r584948b. Alias it.
+if [ -d prebuilts/clang/host/linux-arm64/clang-r584948b ] && [ ! -e prebuilts/clang/host/linux-arm64/clang-r584948 ]; then
+  ln -s clang-r584948b prebuilts/clang/host/linux-arm64/clang-r584948 && echo "linked clang-r584948 -> clang-r584948b"
+fi
+echo "BINDGEN CLANG OK"
