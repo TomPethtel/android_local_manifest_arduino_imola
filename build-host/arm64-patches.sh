@@ -251,3 +251,26 @@ if [ -d "$rl" ] && [ ! -f "$rl/libgcc_s.so.1" ]; then
   cp "$tmp/usr/lib/libgcc_s.so.1" "$rl/" && echo "placed musl libgcc_s.so.1 in $rl"; rm -rf "$tmp"
 fi
 echo "RUST MUSL GLUE OK"
+
+# 17. Rust: AOSP builds the host stdlib from source for the musl_arm64 host (it has no prebuilt std for
+#     aarch64-unknown-linux-musl). We installed one, and regular rlibs already compile against it, but the
+#     from-source libstd/*.rust_sysroot modules still exist and leak a second `core` into cc's generated
+#     Rust staticlibs ("multiple candidates for rlib dependency core"). Disable the from-source sysroot.
+perl -0pi -e 's/(musl_arm64: \{\s*enabled: )true/${1}false/' prebuilts/rust-toolchain/linux-x86/Android.bp
+grep -q "musl_arm64: {\s*$" prebuilts/rust-toolchain/linux-x86/Android.bp && echo "RUST SYSROOT DEFAULTS OK"
+
+# 18. Kernel host tools: Lineage links resolve_btfids/sign-file against prebuilts/kernel-build-tools/linux-x86
+#     (x86 libelf/libcrypto) and runs its lz4/pahole. There is no linux-arm64 copy; on an arm64 host use the
+#     distro's libelf-dev/libssl-dev, lz4 and pahole (dwarves) instead.
+f=vendor/lineage/config/BoardConfigKernel.mk
+if ! grep -q "Local: arm64 host" "$f"; then
+  perl -0pi -e '
+    s{^(KERNEL_MAKE_FLAGS \+= HOSTCFLAGS=.*\nKERNEL_MAKE_FLAGS \+= HOSTLDFLAGS=.*\n)}
+     {ifeq (\$(HOST_PREBUILT_TAG),linux-arm64)\n    # Local: arm64 host has no prebuilt kernel-build-tools; link host tools against the distro libelf/libcrypto\n    KERNEL_MAKE_FLAGS += HOSTCFLAGS=""\n    KERNEL_MAKE_FLAGS += HOSTLDFLAGS="-fuse-ld=lld --rtlib=compiler-rt"\n    KERNEL_BUILD_TOOLS_BIN := /usr/bin\nelse\n$1    KERNEL_BUILD_TOOLS_BIN := \$(BUILD_TOP)/prebuilts/kernel-build-tools/linux-x86/bin\nendif\n}m;
+    s{\$\(BUILD_TOP\)/prebuilts/kernel-build-tools/linux-x86/bin/(lz4|pahole)}{\$(KERNEL_BUILD_TOOLS_BIN)/$1}g;
+  ' "$f"
+  echo "patched: $f"
+else
+  echo "already: $f"
+fi
+grep -q 'KERNEL_BUILD_TOOLS_BIN)/pahole' "$f" && echo "KERNEL HOST TOOLS OK"
