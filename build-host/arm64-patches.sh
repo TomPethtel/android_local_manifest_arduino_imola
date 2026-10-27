@@ -201,3 +201,36 @@ if [ -f "$rb/rustc" ] && [ ! -f "$rb/rustc.real" ]; then
   chmod +x "$rb/rustc"; echo "wrapped: $rb/rustc"
 fi
 echo "TOOLCHAIN GLUE OK"
+
+# 14. Cronet leaks x86 SIMD flags (-msse*, -mavx*, -mfpmath=sse, ...) into host (aarch64-linux-musl) compiles.
+#     Replace the clang-real symlink in each arm64 clang with a bash shim that drops x86-only -m flags.
+#     clang++-real and clang-cl symlink to clang-real, and exec -a keeps argv[0] so the C++ driver mode survives.
+for cdir in prebuilts/clang/host/linux-arm64/clang-r*/; do
+  b="$cdir/bin"; [ -d "$b" ] || continue
+  if [ -L "$b/clang-real" ]; then
+    real=$(readlink "$b/clang-real"); rm "$b/clang-real"
+    cat > "$b/clang-real" <<SHIM
+#!/bin/bash
+# Local arm64-host shim: strip x86-only codegen flags that Cronet's GN-derived Android.bp passes to host compiles.
+args=()
+for a in "\$@"; do
+  case "\$a" in
+    -m[0-9]*|-mmmx|-m3dnow*|-msse*|-mno-sse*|-mavx*|-mno-avx*|-maes|-mno-aes|-mpclmul|-mvpclmulqdq|-mf16c|-mfma|-mfma4|-mfpmath=*|-mbmi*|-mpopcnt|-mlzcnt|-mxsave*|-msha|-mvaes|-mgfni|-mprfchw|-mrdrnd|-mrdseed|-madx|-mcx16|-mclflushopt|-mstackrealign) ;;
+    *) args+=("\$a") ;;
+  esac
+done
+exec -a "\$0" "\$(dirname "\$0")/$real" "\${args[@]}"
+SHIM
+    chmod +x "$b/clang-real"; echo "shimmed: $b/clang-real -> $real"
+  fi
+done
+
+# 15. The musl-linked bison/flex/m4 in prebuilts/build-tools/linux-arm64 cannot find libc_musl.so inside sbox sandboxes
+#     (relinterp rpath lookup); swap in the host distro's glibc builds (same versions: bison 3.8.2, flex 2.6.4, m4 1.4.19).
+for t in bison flex m4; do
+  f=prebuilts/build-tools/linux-arm64/bin/$t
+  if [ -f "$f" ] && [ ! -f "$f.musl" ] && readelf -d "$f" 2>/dev/null | grep -q libc_musl; then
+    mv "$f" "$f.musl" && cp "/usr/bin/$t" "$f" && echo "replaced with glibc build: $f"
+  fi
+done
+echo "CLANG SHIM + BUILD-TOOLS OK"
