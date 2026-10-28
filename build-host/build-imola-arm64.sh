@@ -16,7 +16,11 @@ lunch lineage_imola-cp2a-userdebug || exit 1
 rc=1
 for attempt in 1 2 3; do
   echo "=== arm64 build attempt $attempt ==="
-  m -k -j8 bacon 2>&1 | tee ~/build-arm64.log; rc=${PIPESTATUS[0]}
+  # `bacon` cannot succeed for imola: the OTA zip is disabled for this device (no recovery image), and the
+  # flashable artifact is the EDL package from device/arduino/imola/tools/package_qdl.py, built from droid's
+  # Image, ramdisk, dtb.img and super.img.
+  m -k -j8 2>&1 | tee ~/build-arm64.log; rc=${PIPESTATUS[0]}
   [ $rc -eq 0 ] && break
 done
 echo BUILD_EXIT=$rc
+[ $rc -eq 0 ] && echo "next: python3 device/arduino/imola/tools/package_qdl.py --top ~/lineage-24  (needs mtools)"
