@@ -195,11 +195,13 @@ PY
 #   - upstream stable rustc rejects the -Z flags Soong passes (AOSP's own rustc build accepts them): wrap it with RUSTC_BOOTSTRAP=1.
 [ -e prebuilts/jdk/jdk8/linux-arm64 ] || { ln -s linux-x86 prebuilts/jdk/jdk8/linux-arm64 && echo "linked: prebuilts/jdk/jdk8/linux-arm64"; }
 rb=prebuilts/rust-toolchain/linux-arm64/1.93.1/bin
-if [ -f "$rb/rustc" ] && [ ! -f "$rb/rustc.real" ]; then
-  mv "$rb/rustc" "$rb/rustc.real"
-  printf '#!/bin/sh\n# Upstream stable rustc rejects the -Z flags Soong passes; AOSP'"'"'s own rustc build accepts them.\nRUSTC_BOOTSTRAP=1 exec "$(dirname "$0")/rustc.real" "$@"\n' > "$rb/rustc"
-  chmod +x "$rb/rustc"; echo "wrapped: $rb/rustc"
-fi
+for t in rustc clippy-driver rustdoc; do   # Soong passes -Z to all three
+  if [ -f "$rb/$t" ] && [ ! -f "$rb/$t.real" ]; then
+    mv "$rb/$t" "$rb/$t.real"
+    printf '#!/bin/sh\n# Upstream stable rustc rejects the -Z flags Soong passes; AOSP'"'"'s own rustc build accepts them.\nRUSTC_BOOTSTRAP=1 exec "$(dirname "$0")/%s.real" "$@"\n' "$t" > "$rb/$t"
+    chmod +x "$rb/$t"; echo "wrapped: $rb/$t"
+  fi
+done
 echo "TOOLCHAIN GLUE OK"
 
 # 14. Cronet leaks x86 SIMD flags (-msse*, -mavx*, -mfpmath=sse, ...) into host (aarch64-linux-musl) compiles.
@@ -287,3 +289,13 @@ if [ -d prebuilts/clang/host/linux-arm64/clang-r584948b ] && [ ! -e prebuilts/cl
   ln -s clang-r584948b prebuilts/clang/host/linux-arm64/clang-r584948 && echo "linked clang-r584948 -> clang-r584948b"
 fi
 echo "BINDGEN CLANG OK"
+
+# 21. BoardConfigKernel.mk only makes the kernel's O= path absolute when OUT_DIR is exactly "out". With any other
+#     relative OUT_DIR (we use out-arm64) the kernel make resolves O= against the kernel source dir, finds no .config
+#     there, and `olddefconfig` silently seeds it from /boot/config-$(uname -r) (CONFIG_SYSTEM_TRUSTED_KEYS=
+#     "debian/canonical-certs.pem" and all). Prefix every relative OUT_DIR.
+f=vendor/lineage/config/BoardConfigKernel.mk
+if grep -q '^ifeq ($(OUT_DIR_PREFIX),out)$' "$f"; then
+  sed -i 's|^ifeq ($(OUT_DIR_PREFIX),out)$|ifeq ($(filter /%,$(OUT_DIR_PREFIX)),)   # Local: any relative OUT_DIR|' "$f" && echo "patched: $f (kernel O= prefix)"
+fi
+grep -q 'filter /%,$(OUT_DIR_PREFIX)' "$f" && echo "KERNEL OUT PREFIX OK"
