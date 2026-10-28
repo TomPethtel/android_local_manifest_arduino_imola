@@ -299,3 +299,12 @@ if grep -q '^ifeq ($(OUT_DIR_PREFIX),out)$' "$f"; then
   sed -i 's|^ifeq ($(OUT_DIR_PREFIX),out)$|ifeq ($(filter /%,$(OUT_DIR_PREFIX)),)   # Local: any relative OUT_DIR|' "$f" && echo "patched: $f (kernel O= prefix)"
 fi
 grep -q 'filter /%,$(OUT_DIR_PREFIX)' "$f" && echo "KERNEL OUT PREFIX OK"
+
+# 22. BoardConfigKernel.mk sizes the kernel make with `$(shell getconf _NPROCESSORS_ONLN)`. Under Kati on this
+#     host that came out as 2 (getconf is not an allowed PATH tool for Soong's interposer), so the kernel built
+#     with -j2. Count the CPUs with a pure-Make wildcard instead; no tool needed.
+f=vendor/lineage/config/BoardConfigKernel.mk
+if grep -q '^KERNEL_MAKE_FLAGS += -j$(shell getconf _NPROCESSORS_ONLN)$' "$f"; then
+  sed -i 's|^KERNEL_MAKE_FLAGS += -j$(shell getconf _NPROCESSORS_ONLN)$|KERNEL_MAKE_FLAGS += -j$(words $(wildcard /sys/devices/system/cpu/cpu[0-9]*))   # Local: getconf gave 2 under Kati|' "$f" && echo "patched: $f (kernel -j)"
+fi
+grep -q 'cpu\[0-9\]\*))' "$f" && echo "KERNEL JOBS OK"

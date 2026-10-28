@@ -15,7 +15,7 @@ sudo sed -i '/^Components:/a Architectures: arm64' /etc/apt/sources.list.d/ubunt
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
   bc bison build-essential ccache curl flex git git-lfs gnupg gperf imagemagick \
-  dwarves libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush \
+  dwarves mtools libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush \
   rsync schedtool squashfs-tools xsltproc zip unzip zlib1g-dev libncurses-dev \
   python3 python-is-python3 python3-pip repo openjdk-21-jdk-headless \
   libc6:amd64 libstdc++6:amd64 zlib1g:amd64 libncurses6:amd64 libtinfo6:amd64 libgcc-s1:amd64 \
