@@ -94,8 +94,14 @@ Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch 
 * `system/sepolicy`: `getopt` results into `int` (plain `char` is unsigned on aarch64).
 * `prebuilts/rust-toolchain/linux-x86`: no from-source sysroot on musl_arm64; `vendor/lineage`: kernel host tools from the distro.
 
-Status (2026-10-27): analysis and ~70% of the compile pass natively at ~20 steps/s. Fixed since, awaiting a
-full run to confirm: duplicate `core` in generated Rust staticlibs (the from-source musl_arm64 Rust sysroot is
-now disabled in favour of the prebuilt one, step 17) and the kernel's host tools linking against the x86
-`kernel-build-tools` libraries (step 18 uses the distro's libelf/libcrypto, lz4 and pahole). The LFI-verifier
-non-fatal change from the blog has not been needed yet.
+Then `package-arm64.sh` wraps the device tree's `package_qdl.py` for the `out-arm64` layout and produces
+`arduino-images/` (512 MB boot partition, 4 GB root partition with the super image, Qualcomm firmware and
+EDL XMLs) plus a `.tar.zst` of it, flashable with `arduino-flasher-cli flash --board ventunoq <dir>` or `qdl`.
+
+Build `droid`, not `bacon`: Lineage disables the OTA zip for imola (no recovery image), so `bacon` always
+fails on its final `ln`. The device has no boot.img, recovery or A/B slots at all; U-Boot loads the kernel,
+ramdisk and dtb from the FAT boot partition, and updates mean reflashing (the `nouser` XML keeps userdata).
+
+Status (2026-10-27): the native arm64 build COMPLETES. First full run: 45 min analysis + ~4 h compile at -j8
+(the kernel ran at -j2 that time, see step 22) + packaging, with every fix above applied up front. The
+LFI-verifier non-fatal change from the blog was never needed.
