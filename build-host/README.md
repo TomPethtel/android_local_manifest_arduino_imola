@@ -96,12 +96,31 @@ Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch 
 
 Then `package-arm64.sh` wraps the device tree's `package_qdl.py` for the `out-arm64` layout and produces
 `arduino-images/` (512 MB boot partition, 4 GB root partition with the super image, Qualcomm firmware and
-EDL XMLs) plus a `.tar.zst` of it, flashable with `arduino-flasher-cli flash --board ventunoq <dir>` or `qdl`.
+EDL XMLs) plus a `.tar.zst` of it.
 
-Build `droid`, not `bacon`: Lineage disables the OTA zip for imola (no recovery image), so `bacon` always
-fails on its final `ln`. The device has no boot.img, recovery or A/B slots at all; U-Boot loads the kernel,
-ramdisk and dtb from the FAT boot partition, and updates mean reflashing (the `nouser` XML keeps userdata).
+## 5. Flashing and what the board needs to boot (2026-11-07)
 
-Status (2026-10-27): the native arm64 build COMPLETES. First full run: 45 min analysis + ~4 h compile at -j8
-(the kernel ran at -j2 that time, see step 22) + packaging, with every fix above applied up front. The
-LFI-verifier non-fatal change from the blog was never needed.
+**Flash with qdl, not with `arduino-flasher-cli`.** The Arduino flasher re-sizes the root partition to fill the
+eMMC and silently drops the `userdata` entry from the GPT. Android then waits 40 s for `/data`, apexd cannot
+activate the tethering module, the `bpfloader` service stays at its platform stub `/system/bin/false`, and init
+reboots with reason `netbpfload-missing` at 61 s, forever (the red QRB status LED is the kernel's panic-indicator
+trigger firing during that reboot). `brew install qdl`, put the JCTL jumper on, power-cycle, then:
+
+```bash
+cd arduino-images/flash && qdl --storage emmc prog_firehose_ddr.elf rawprogram0.xml patch0.xml
+```
+
+Two device-tree fixes on top of the upstream port, applied by `imola-fixes.sh` (host-independent):
+
+* `sys.use_memfd=true`: the 6.18 kernel has no `/dev/ashmem`, and libcutils only switches to memfd from vendor
+  API level 202604; the tree ships shipping API level 36, so system_server died at startup with
+  "Failed to create ashmem" and zygote restarted it every 5 s.
+
+Optional debug variant, `usb-adb-debug.sh`: puts the USB-C port in device mode with adb on it (the stock port
+keeps the port as a USB host with adb on TCP 5555), fixes the vendor usb rc resetting `sys.usb.config` to
+`none` after boot, and mirrors logcat errors into dmesg so they reach the serial console.
+
+Serial console: JCTL pin 4 (TX), 6 (RX), 7 (GND), 1.8 V logic, 115200 8N1; an FTDI TTL232RG-VREG1V8 works
+directly. On macOS hold the port open or the baud rate resets: `exec 3<>$dev; stty -f $dev raw 115200; cat <&3`.
+
+Status: LineageOS 24 boots to `sys.boot_completed=1` on the UNO Q from the native arm64 build.
