@@ -308,3 +308,26 @@ if grep -q '^KERNEL_MAKE_FLAGS += -j$(shell getconf _NPROCESSORS_ONLN)$' "$f"; t
   sed -i 's|^KERNEL_MAKE_FLAGS += -j$(shell getconf _NPROCESSORS_ONLN)$|KERNEL_MAKE_FLAGS += -j$(words $(wildcard /sys/devices/system/cpu/cpu[0-9]*))   # Local: getconf gave 2 under Kati|' "$f" && echo "patched: $f (kernel -j)"
 fi
 grep -q 'cpu\[0-9\]\*))' "$f" && echo "KERNEL JOBS OK"
+
+# 23. bionic's kernel-header cleaner (bionic/libc/kernel/tools/cpp.py, run by Lineage's generated_kernel_includes,
+#     which generated_kernel_headers users such as Qualcomm's gpt-utils pull in) loads libclang.so from
+#     prebuilts/clang/host/linux-x86/clang-stable through ctypes: "Exec format error" under a native aarch64
+#     python. Take libclang and its Python bindings from the arm64 clang on an aarch64 host.
+python3 - <<'PY'
+import pathlib
+p = pathlib.Path("bionic/libc/kernel/tools/cpp.py"); s = p.read_text()
+marker = "# Local: arm64 host"
+if marker in s:
+    print(f"already: {p}")
+else:
+    old_dir = "'prebuilts/clang/host/linux-x86/clang-stable/lib/"
+    assert s.count(old_dir) == 2, f"expected 2 clang-stable paths in {p}, found {s.count(old_dir)}"
+    anchor = "# Set up the env vars for libclang.\n"
+    assert s.count(anchor) == 1
+    s = s.replace(anchor, anchor + marker + " (build-host/arm64-patches.sh step 23): the linux-x86 libclang cannot load.\n"
+                  "clang_dir = ('prebuilts/clang/host/linux-arm64/clang-r596125' if os.uname().machine == 'aarch64'\n"
+                  "             else 'prebuilts/clang/host/linux-x86/clang-stable')\n")
+    s = s.replace("os.path.join(top, " + old_dir, "os.path.join(top, clang_dir, 'lib/")
+    p.write_text(s); print(f"patched: {p}")
+PY
+grep -q "os.path.join(top, clang_dir, 'lib/libclang.so')" bionic/libc/kernel/tools/cpp.py && echo "KERNEL HEADER LIBCLANG OK"
