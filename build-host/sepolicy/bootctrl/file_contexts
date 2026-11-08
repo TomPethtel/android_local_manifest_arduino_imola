@@ -1,0 +1,4 @@
+# Local (build-host/bootctrl-qti.sh). Qualcomm's boot control HAL runs in AOSP's hal_bootctl_default domain.
+/(vendor|system/vendor)/bin/hw/android\.hardware\.boot-service\.qti    u:object_r:hal_bootctl_default_exec:s0
+# The eMMC's whole-disk node, which holds both GPT copies (the same label Qualcomm gives it on bengal).
+/dev/block/mmcblk0    u:object_r:root_block_device:s0

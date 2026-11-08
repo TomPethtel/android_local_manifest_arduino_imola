@@ -1,0 +1,10 @@
+# Local (build-host/bootctrl-qti.sh): Qualcomm's boot control HAL. ABL keeps the A/B slot state in the GPT
+# attribute bits of each slot's partition entries (active, priority, retry count, successful, unbootable), so
+# markBootSuccessful and setActiveBootSlot rewrite both GPT copies through the eMMC's whole-disk node.
+allow hal_bootctl_default root_block_device:blk_file rw_file_perms;
+
+# It counts slots by listing /dev/block/bootdevice/by-name, and stat()s both halves of every A/B partition
+# it knows (xbl, abl, tz, rpm, boot, ...) before editing their entries. Those nodes keep the generic
+# block_device label, so getattr only.
+allow hal_bootctl_default block_device:dir r_dir_perms;
+allow hal_bootctl_default block_device:blk_file getattr;
