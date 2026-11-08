@@ -151,3 +151,38 @@ separate repo (unoq-mods). Its `aosp/build-prebuilts.sh` and `aosp/sync-to-vm.sh
 Verified 2026-11-08 on board 2, after a keep-data flash and a cold boot: the sketch enumerates, ModService
 (uid 1000) attaches it within a second of starting, and the demo app drives the LEDs. unoq-mods'
 `tools/image-check.sh` runs the checks.
+
+## 7. Performance and SELinux enforcing (2026-11-08)
+
+The port now boots **SELinux enforcing** with no denials in boot, Mods, sketch uploads, bridge mode, the
+browser or Settings. `selinux-audit.sh` lists what a board has denied since boot (`--enforce` runs a smoke
+test), and `m-target.sh <target>` builds single targets, such as `selinux_policy`, with the arm64 build's
+environment. The image is `IMOLA_SELINUX=enforcing` by default. `IMOLA_SELINUX=permissive bash package-arm64.sh`
+packages a permissive one for debugging: the kernel command line comes from `package_qdl.py` (boot.scr), not
+BoardConfig.
+
+* **Memfd** (`imola-fixes.sh`). The 6.18 kernel has no `/dev/ashmem`, so `sys.use_memfd` (now set from the
+  product build.prop) backs shared memory with memfd. Two follow-on costs:
+  * The policy never enabled `memfd_class`, because it keys off vendor API 202604, so every memfd crossing
+    binder was denied. `sepolicy/system_ext/private` enables it, and Android 17's `memfd_file` rules take over.
+  * libcutils recognised memfds by `readlink(/proc/self/fd/N)`, which Chromium's renderer sandbox refuses. The
+    renderer fell back to ashmem on every allocation, about half a core while a page renders.
+    `libcutils-memfd-sandbox.patch` checks the seals instead.
+* **Labels for the QCM2290** (`selinux-fixes.sh`, `sepolicy/vendor`). The device policy came from db845c, so its
+  sysfs labels pointed at sdm845 addresses. This adds the real display, remoteproc (including the modem at
+  6080000), rmtfs memory, wakeup and eMMC-queue nodes, plus `gralloc.minigbm.so` (in-process for every graphics
+  client), Mesa's `vendor.mesa.*` options and the Android 17 build-info props.
+* **vendor_init may not set platform props.** `sys.use_memfd`, the ADB and timezone props and
+  `persist.demo.rotationlock` moved to the product build.prop. `usb-adb-debug.sh` deletes the vendor rc's
+  `sys.usb.config` override; AOSP's init.usb.rc already applies the persist value.
+* **Treble.** `gpio_chip_device` moved to system_ext public so system-side ModService can be granted it.
+  `unoq-mods.sh` folds the device's `init.svc.arduino-router` triggers into the Mods mode switch, since
+  vendor_init can't read `init.svc.*`.
+* **Sketch uploads** stage in `/data/vendor/openocd`. AOSP's shell.te neverallows keep every vendor domain out of
+  `/data/local/tmp`.
+* **OpenOCD** starts with `poll off` (it bit-banged SWD every 100 ms), and the `logcat_kmsg` debug mirror is gone.
+
+**ABL slot retries.** ABL decrements slot A's retry count on every boot, and the default boot HAL marks success
+in `misc`, which ABL ignores. After a few boots ABL declares `_a` unbootable and parks in fastboot. Fix it
+with `fastboot set_active a; fastboot reboot`. Qualcomm's bootctrl (`hardware/qcom-caf/bootctrl`) writes the
+GPT attributes ABL reads and would end this.
