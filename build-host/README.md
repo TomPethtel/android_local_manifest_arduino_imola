@@ -93,6 +93,7 @@ Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch 
 * `prebuilts/build-tools` and `prebuilts/jdk/jdk21`: enable bison/flex/m4/make/javap on arm64.
 * `system/sepolicy`: `getopt` results into `int` (plain `char` is unsigned on aarch64).
 * `prebuilts/rust-toolchain/linux-x86`: no from-source sysroot on musl_arm64; `vendor/lineage`: kernel host tools from the distro.
+* `bionic`: the kernel-header cleaner behind `generated_kernel_headers` loads libclang from the arm64 clang.
 
 Then `package-arm64.sh` wraps the device tree's `package_qdl.py` for the `out-arm64` layout and produces
 `arduino-images/` (512 MB boot partition, 4 GB root partition with the super image, Qualcomm firmware and
