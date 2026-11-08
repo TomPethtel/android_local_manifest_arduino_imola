@@ -131,3 +131,23 @@ directly. On macOS hold the port open or the baud rate resets: `exec 3<>$dev; st
 
 Status: LineageOS 24 boots to `sys.boot_completed=1` on the UNO Q from the native arm64 build.
 
+## 6. UNO Q Mods (2026-11-08)
+
+`unoq-mods.sh` builds the STM32 into the image as a Moto-Mods-style Greybus accessory. The project is a
+separate repo (unoq-mods). Its `aosp/build-prebuilts.sh` and `aosp/sync-to-vm.sh` put what the build needs at
+`vendor/unoq-mods`, and then this script wires it in:
+
+* the `gb-unoq` Greybus host (in-kernel SVC) as `CONFIG_GREYBUS_UNOQ`, plus the staging Greybus class drivers,
+  all loaded at boot from `vendor_dlkm`. `LEDS_CLASS_FLASH` is needed too, or olddefconfig silently drops
+  gb-light.
+* `persist.vendor.unoq.mcu_mode` (default `greybus`) decides who owns `/dev/ttyHS1`: gb-unoq's line
+  discipline, or Arduino's `arduino-router` for stock Bridge sketches. `arduino-router` and `imola-bridge`
+  become `disabled`, and the device's MCU reset on router stop only runs in bridge mode. Otherwise it drops
+  the loader's ready line right after gb-unoq raised it, and the sketch never starts.
+* ModService preloaded as a priv-app on the system uid. Android 17 refuses a sideloaded platform-signed app
+  that joins `android.uid.system`. The Mods Demo app ships alongside it.
+* ueventd gives the Greybus gpiochips, `/dev/gb/raw*` and `/dev/ttyGB*` to group `system`.
+
+Verified 2026-11-08 on board 2, after a keep-data flash and a cold boot: the sketch enumerates, ModService
+(uid 1000) attaches it within a second of starting, and the demo app drives the LEDs. unoq-mods'
+`tools/image-check.sh` runs the checks.
