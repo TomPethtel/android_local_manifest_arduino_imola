@@ -7,7 +7,8 @@
 #      core (usb@4e00000 in qcm2290.dtsi) at boot
 #   4. the vendor usb rc's `on boot` ends with `setprop sys.usb.config none`, which runs AFTER init.usb.rc copied
 #      persist.sys.usb.config into sys.usb.config and so overrides adb with none -> follow the persist value
-#   5. debug only: mirror logcat errors into the kernel log so they reach the serial console (system_server crashes)
+#   5. removes the logcat_kmsg mirror earlier versions added: once the board booted it only crash-looped
+#      (logcat -f /dev/kmsg keeps exiting), restarting every minute and tripping flags_health_check
 # Idempotent. Revert with `git checkout` in kernel/arduino/imola and device/arduino/imola.
 set -euo pipefail
 cd ~/lineage-24
@@ -19,6 +20,14 @@ rc=device/arduino/imola/init.imola.usb.rc
 grep -q 'vendor.usb.controller 4e00000.usb' "$rc" || { sed -i '0,/^    mount configfs none \/config$/s//    mount configfs none \/config\n    setprop vendor.usb.controller 4e00000.usb/' "$rc" && echo "patched: $rc"; }
 grep -q 'setprop sys.usb.config ${persist.sys.usb.config}' "$rc" || { sed -i 's/^    setprop sys.usb.config none$/    setprop sys.usb.config ${persist.sys.usb.config}/' "$rc" && echo "patched: $rc (sys.usb.config follows persist)"; }
 main=device/arduino/imola/init.imola.rc
-grep -q 'service logcat_kmsg' "$main" || { printf '\n# Local debug: mirror logcat errors into dmesg so they reach the serial console\nservice logcat_kmsg /system/bin/logcat -b main,system,crash -v brief *:E -f /dev/kmsg\n    class main\n    user root\n    group root log logd\n    disabled\n\non post-fs-data\n    start logcat_kmsg\n' >> "$main" && echo "patched: $main (logcat_kmsg)"; }
-grep -n 'dr_mode' "$dts"; grep -n 'persist.sys.usb.config' "$mk"; sed -n 1,4p "$rc"; grep -n 'setprop sys.usb.config' "$rc"; grep -n 'logcat_kmsg' "$main"
+python3 - "$main" <<'EOF'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+n = re.sub(r'\n# Local debug: mirror logcat errors into dmesg so they reach the serial console\nservice logcat_kmsg .*?\n\non post-fs-data\n    start logcat_kmsg\n', '\n', s, flags=re.S)
+if n != s:
+    open(p, 'w').write(n)
+    print('patched: %s (removed logcat_kmsg)' % p)
+EOF
+grep -n 'dr_mode' "$dts"; grep -n 'persist.sys.usb.config' "$mk"; sed -n 1,4p "$rc"; grep -n 'setprop sys.usb.config' "$rc"; ! grep -n 'logcat_kmsg' "$main"
 echo "USB ADB DEBUG OK"
