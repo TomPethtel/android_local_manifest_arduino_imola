@@ -183,7 +183,33 @@ BoardConfig.
   `/data/local/tmp`.
 * **OpenOCD** starts with `poll off` (it bit-banged SWD every 100 ms), and the `logcat_kmsg` debug mirror is gone.
 
-**ABL slot retries.** ABL decrements slot A's retry count on every boot, and the default boot HAL marks success
-in `misc`, which ABL ignores. After a few boots ABL declares `_a` unbootable and parks in fastboot. Fix it
-with `fastboot set_active a; fastboot reboot`. Qualcomm's bootctrl (`hardware/qcom-caf/bootctrl`) writes the
-GPT attributes ABL reads and would end this.
+## 8. A/B slot state: Qualcomm's boot control HAL (2026-11-08)
+
+**The trap.** ABL keeps each slot's state in the attribute bits of its `boot_a`/`boot_b` GPT entry: priority,
+active, retry count, successful, unbootable. On every boot of a slot that isn't marked successful it lowers the
+retry count, and at 0 it marks the slot unbootable and parks in fastboot. The port shipped AOSP's default boot
+HAL (`com.android.hardware.boot`), which records success only in `misc`, where ABL never looks. Seven boots after
+`fastboot set_active a`, the board sat in fastboot looking dead.
+
+**The fix.** `bootctrl-qti.sh` swaps in `hardware/qcom-caf/bootctrl`, which writes those bits on both GPT copies,
+and installs its policy from `sepolicy/bootctrl`. `/dev/block/mmcblk0` is labelled `root_block_device` and
+`hal_bootctl_default` may write it. The QCM2290 needs nothing else. `ro.boot.bootdevice` is unset, so gpt-utils
+takes its eMMC path, and the Arduino GPT has `_a`/`_b` copies of `boot` and the firmware partitions in the HAL's
+list. Don't set `ro.vendor.bootctrl.enable=true`: that is the HAL's GVM mode, which records success only in misc.
+
+`slot-status.sh` prints the bits from a running board over adb root, read-only. Verified on board 2 after a
+keep-data flash: the first boot marked `boot_a` successful (retry 5 → 4), and six reboots later it is still
+retry 4, successful 1. No denials, and image-check is 13/13.
+
+How it behaves:
+
+* vold marks the slot from `cp_commitChanges` once boot completes. If that call fails, ActivityManager reboots
+  ("Checkpoint commit failed") until the retries run out, so a change to the HAL or its policy must leave
+  `selinux-audit.sh` clean.
+* The first boot of an unmarked slot mounts `/data` with an f2fs checkpoint, because vold treats it like the
+  first boot after an OTA. The checkpoint is committed at boot complete, and later boots skip it. That first
+  boot comes after this image replaces the default HAL, and again after any `fastboot set_active`.
+* `fastboot set_active a; fastboot reboot` still re-arms a slot (retry 7, successful 0), and the next completed
+  boot marks it again.
+* `ddr` and `uefi_dtb` aren't in Qualcomm's list, so `slot-status.sh` counts 16 of 18 other `_a` entries
+  marked successful.
