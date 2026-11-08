@@ -10,7 +10,10 @@ cd ~/lineage-24
 #    5 s forever. Force memfd (libcutils honours sys.use_memfd) rather than bumping the shipping API level, which
 #    would pull in other VSR requirements.
 mk=device/arduino/imola/device.mk
-grep -q 'sys.use_memfd=true' "$mk" || { printf '\n# Local: no /dev/ashmem on 6.18; make libcutils use memfd (see build-host/imola-fixes.sh)\nPRODUCT_PROPERTY_OVERRIDES += sys.use_memfd=true\n' >> "$mk" && echo "patched: $mk (sys.use_memfd)"; }
+# sys.use_memfd is a platform property, which vendor_init may not set once SELinux enforces, so it goes in the
+# product build.prop (init sets those). Earlier versions of this script put it in the vendor one.
+sed -i 's/^PRODUCT_PROPERTY_OVERRIDES += sys.use_memfd=true$/PRODUCT_PRODUCT_PROPERTIES += sys.use_memfd=true/' "$mk"
+grep -q 'sys.use_memfd=true' "$mk" || { printf '\n# Local: no /dev/ashmem on 6.18; make libcutils use memfd (see build-host/imola-fixes.sh)\nPRODUCT_PRODUCT_PROPERTIES += sys.use_memfd=true\n' >> "$mk" && echo "patched: $mk (sys.use_memfd)"; }
 # 2. The memfd workaround's cost: apps still send ashmem ioctls (Chromium's renderer: ASHMEM_SET_PROT_MASK,
 #    0x7705) to what are now memfd files labelled appdomain_tmpfs. No policy covers that, so with SELinux
 #    permissive every one is a logged denial: thousands per second while a page renders, about half the
@@ -37,4 +40,4 @@ grep -q 'init; poll off' "$ocd" || { sed -i 's/-c "telnet_port 4444; gdb_port di
 if git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null; then :
 else git -C system/core apply "$HERE/libcutils-memfd-sandbox.patch" && echo "patched: system/core/libcutils/ashmem-dev.cpp (sandboxed memfd check)"; fi
 
-grep -q 'sys.use_memfd=true' "$mk" && [ -f "$te" ] && git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null && grep -q 'poll off' "$ocd" && echo "IMOLA FIXES OK"
+grep -q 'PRODUCT_PRODUCT_PROPERTIES += sys.use_memfd=true' "$mk" && [ -f "$te" ] && git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null && grep -q 'poll off' "$ocd" && echo "IMOLA FIXES OK"
