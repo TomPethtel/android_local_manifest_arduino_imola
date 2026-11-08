@@ -11,6 +11,9 @@
 #      sys.use_memfd is handled by imola-fixes.sh.
 #   4. sketch uploads stage in /data/vendor/openocd (init.imola.rc creates it): OpenOCD may not read /data/local/tmp
 #      under enforcing (shell.te neverallow)
+#   5. enforcing: the kernel command line comes from the packager (package_qdl.py writes it into boot.scr), which
+#      hard-codes androidboot.selinux=permissive. It now reads IMOLA_SELINUX (default enforcing), so
+#      `IMOLA_SELINUX=permissive bash package-arm64.sh` still makes a permissive image for debugging.
 #
 # Run from a copy of build-host/ in the VM (needs the sepolicy/ directory next to this script). Idempotent.
 # Revert with `git checkout` in device/arduino/imola and removing device/arduino/imola/sepolicy-local.
@@ -74,9 +77,29 @@ grep -q '/data/vendor/openocd' $D/init.imola.rc || {
   printf '\n# Local (build-host/selinux-fixes.sh): sketch uploads; adb root pushes images here, OpenOCD flashes them\non post-fs-data\n    mkdir /data/vendor/openocd 0770 root system\n' >> $D/init.imola.rc
   echo "patched: $D/init.imola.rc (/data/vendor/openocd)"; }
 
+# 5. Enforcing by default.
+python3 - $D/tools/package_qdl.py $D/BoardConfig.mk <<'EOF'
+import sys
+pkg, bc = sys.argv[1], sys.argv[2]
+s = open(pkg).read()
+old = '"androidboot.selinux=permissive efi=noruntime "'
+new = '"androidboot.selinux=" + os.environ.get("IMOLA_SELINUX", "enforcing") + " efi=noruntime "'
+if old in s:
+    s = s.replace(old, new)
+    if '\nimport os\n' not in s:
+        s = s.replace('\nimport ', '\nimport os\nimport ', 1)
+    open(pkg, 'w').write(s)
+    print('patched: %s (androidboot.selinux from IMOLA_SELINUX, default enforcing)' % pkg)
+b = open(bc).read()
+if 'BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive\n' in b:
+    open(bc, 'w').write(b.replace('BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive\n', ''))
+    print('patched: %s (androidboot.selinux=permissive dropped)' % bc)
+EOF
+
 ls $L/*
 grep -n 'sepolicy-local' $D/BoardConfig.mk
 grep -n 'gpio_chip_device' $D/sepolicy/file.te
 grep -n -B1 'persist.sys.usb.config\|persist.sys.timezone=' $D/device.mk | grep PRODUCT_
 grep -n -A1 'PRODUCT_PRODUCT_PROPERTIES' $D/shared/graphics/mesa/device.mk
+grep -n 'androidboot.selinux' $D/tools/package_qdl.py $D/BoardConfig.mk
 echo "SELINUX FIXES OK"
