@@ -1,0 +1,3 @@
+# Local (build-host/selinux-fixes.sh): WebView renderers look up content_capture, which isolated apps may not
+# reach; the lookup failing is expected.
+dontaudit isolated_app content_capture_service:service_manager find;

@@ -1,0 +1,3 @@
+# Local (build-host/selinux-fixes.sh): gpiochip nodes. Defined here rather than in vendor policy so that both
+# vendor daemons (imola_gpio, unoq_mods) and the system-side ModService can be granted it under Treble.
+type gpio_chip_device, dev_type;

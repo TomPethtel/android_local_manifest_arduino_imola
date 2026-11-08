@@ -1,0 +1,5 @@
+# Local (build-host/selinux-fixes.sh): label memfds with their creator's domain in the memfd_file class.
+# Android 17's platform policy is written for it (binder_call, appdomain and isolated_app memfd_file rules),
+# but nothing enables the capability for vendor API 202504 devices. The 6.18 kernel supports it, and
+# without it every memfd (sys.use_memfd: there is no /dev/ashmem) lands in tmpfs and is denied across binder.
+policycap memfd_class;

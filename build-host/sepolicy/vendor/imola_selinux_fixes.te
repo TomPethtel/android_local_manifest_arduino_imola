@@ -1,0 +1,63 @@
+# Local (build-host/selinux-fixes.sh): rules the UNO Q port was missing, found running permissive.
+
+# Build info any process may read (see property_contexts).
+vendor_public_prop(vendor_build_info_prop)
+
+# init.rc tunes the eMMC queue (discard_max_bytes) through /dev/sys/block/by-name.
+type sysfs_imola_mmc_queue, fs_type, sysfs_type;
+allow init sysfs_imola_mmc_queue:file w_file_perms;
+# init.rc chmods debugfs mmc nodes; debugfs is not for production use.
+dontaudit init debugfs_mmc:file setattr;
+
+# The kernel's own devtmpfs mount (kdevtmpfs) churns loop/dm nodes; Android's /dev is init's tmpfs.
+dontaudit kernel device:blk_file { create setattr unlink };
+dontaudit kernel device:dir { add_name remove_name write };
+# krfcommd binds a privileged RFCOMM channel.
+allow kernel self:capability net_bind_service;
+
+# The vendor usb rc sets the UDC (set_udc.sh path) from vendor_init.
+set_prop(vendor_init, vendor_usb_prop)
+
+# hwcomposer reads vendor.hw.*; mediaswcodec loads minigbm's gralloc, which reads vendor.minigbm.debug.
+get_prop(hal_graphics_composer_default, vendor_hw_prop)
+get_prop(mediaswcodec, vendor_minigbm_debug_prop)
+
+# Services started with stdio_to_kmsg write their stdio to /dev/kmsg_debug (userdebug).
+userdebug_or_eng(`
+  allow tqftpserv kmsg_debug_device:chr_file { getattr ioctl write append };
+')
+
+# OpenOCD's launcher runs the bundled loader (ld-linux, labelled imola_gpio_exec) in its own domain.
+allow imola_gpio imola_gpio_exec:file execute_no_trans;
+
+# Mesa's options (vendor.mesa.*) are read by every process that loads the GPU driver.
+vendor_public_prop(vendor_mesa_prop)
+get_prop(domain, vendor_mesa_prop)
+
+# AOSP's init.usb.rc mounts the adb FunctionFS again after the vendor usb rc already did; the second mount
+# is refused either way.
+dontaudit init functionfs:dir mounton;
+
+# arduino-router (bridge mode) creates /dev/socket/arduino-router.sock itself; Go's listen probes somaxconn.
+type_transition arduino_router socket_device:sock_file arduino_router_socket;
+dontaudit arduino_router proc_net:file read;
+
+# imola-bridge and OpenOCD talk TCP on localhost (telnet 4444); netd marks their sockets.
+net_domain(imola_gpio)
+
+# Sketch uploads (unoq-mods tools/upload-sketch.sh): adb root pushes the loader and sketch to
+# /data/vendor/openocd (created by init.imola.rc) and OpenOCD flashes them from there. /data/local/tmp is not an
+# option: shell.te's neverallows keep every vendor domain out of shell_data_file.
+type imola_openocd_data_file, file_type, data_file_type;
+allow imola_gpio imola_openocd_data_file:dir r_dir_perms;
+allow imola_gpio imola_openocd_data_file:file r_file_perms;
+# glibc's loader (OpenOCD is a glibc binary) probes library paths, including /data/local/tmp.
+dontaudit imola_gpio shell_data_file:dir search;
+
+# arduino-router's network API (Bridge TCP/UDP clients and servers for sketches, the monitor on localhost).
+net_domain(arduino_router)
+allow arduino_router self:tcp_socket create_stream_socket_perms;
+allow arduino_router self:udp_socket create_socket_perms;
+allow arduino_router port:tcp_socket { name_bind name_connect };
+allow arduino_router port:udp_socket name_bind;
+allow arduino_router node:{ tcp_socket udp_socket } node_bind;

@@ -1,0 +1,4 @@
+# Local (build-host/selinux-fixes.sh). The device policy came from db845c and labels gralloc.gbm.so; this build
+# ships minigbm's gralloc, which every graphics client loads in-process.
+/vendor/lib(64)?/hw/gralloc\.minigbm\.so    u:object_r:same_process_hal_file:s0
+/data/vendor/openocd(/.*)?           u:object_r:imola_openocd_data_file:s0

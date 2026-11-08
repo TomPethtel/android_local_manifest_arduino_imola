@@ -1,0 +1,18 @@
+# Local (build-host/selinux-fixes.sh): the QCM2290 (UNO Q) addresses of nodes the db845c-derived policy labels
+# at sdm845 addresses.
+genfscon sysfs /devices/platform/soc@0/5e00000.display-subsystem    u:object_r:sysfs_gpu:s0
+genfscon sysfs /devices/platform/soc@0/ab00000.remoteproc           u:object_r:sysfs_remoteproc:s0
+genfscon sysfs /devices/platform/soc@0/4ef8800.usb/wakeup           u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/c800000.wifi/wakeup          u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/4744000.mmc/mmc_host/mmc0/mmc0:0001/block/mmcblk0/queue u:object_r:sysfs_imola_mmc_queue:s0
+genfscon sysfs /devices/platform/soc@0/6080000.remoteproc           u:object_r:sysfs_remoteproc:s0
+# Wakeup sources system_suspend reads (longest prefix wins over the remoteproc labels above).
+genfscon sysfs /devices/platform/soc@0/6080000.remoteproc/wakeup    u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/ab00000.remoteproc/wakeup    u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/4ef8800.usb/4e00000.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/gpio-keys/wakeup                   u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/1c40000.spmi/spmi-0/0-00/1c40000.spmi:pmic@0:pon@800/1c40000.spmi:pmic@0:pon@800:pwrkey/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/1c40000.spmi/spmi-0/0-00/1c40000.spmi:pmic@0:rtc@6000/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/1c40000.spmi/spmi-0/0-00/1c40000.spmi:pmic@0:rtc@6000/rtc/rtc0/alarmtimer.0.auto/wakeup u:object_r:sysfs_wakeup:s0
+# rmtfs reads its shared memory's address (/sys/class/rmtfs/qcom_rmtfs_mem1/phys_addr); db845c's is 88f00000.
+genfscon sysfs /devices/platform/89b01000.memory                    u:object_r:sysfs_rmtfs:s0

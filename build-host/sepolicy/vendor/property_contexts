@@ -1,0 +1,8 @@
+# Local (build-host/selinux-fixes.sh): Android 17 build-info props with no platform context fall back to
+# vendor_default_prop, which apps and system services may not read.
+ro.vendor.build.uuid                u:object_r:vendor_build_info_prop:s0 exact string
+ro.vendor.build.version.sdk_full    u:object_r:vendor_build_info_prop:s0 exact string
+ro.odm.build.                       u:object_r:vendor_build_info_prop:s0 prefix string
+ro.odm.product.cpu.                 u:object_r:vendor_build_info_prop:s0 prefix string
+# Mesa on Android reads its environment-variable options as vendor.mesa.<name> in every graphics client.
+vendor.mesa.                        u:object_r:vendor_mesa_prop:s0 prefix string
