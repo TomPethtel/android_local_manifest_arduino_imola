@@ -126,9 +126,14 @@ grep -q 'UNO Q Mods' $ue || { cat $SRC/aosp/ueventd.unoq-mods.rc >> $ue; echo "p
 grep -q 'vendor/unoq-mods/aosp/product.mk' $D/device.mk || {
   printf '\n# UNO Q Mods (build-host/unoq-mods.sh)\n$(call inherit-product, vendor/unoq-mods/aosp/product.mk)\n' >> $D/device.mk
   echo "patched: $D/device.mk"; }
-grep -q 'vendor/unoq-mods/aosp/sepolicy' $D/BoardConfig.mk || {
-  printf '\n# UNO Q Mods (build-host/unoq-mods.sh)\nBOARD_SEPOLICY_DIRS += vendor/unoq-mods/aosp/sepolicy\n' >> $D/BoardConfig.mk
+# Mods policy: vendor (unoq_mods, Greybus sysfs labels) and system_ext (sysfs_greybus, ModService).
+sed -i 's#^BOARD_SEPOLICY_DIRS += vendor/unoq-mods/aosp/sepolicy$#BOARD_SEPOLICY_DIRS += vendor/unoq-mods/aosp/sepolicy/vendor#' $D/BoardConfig.mk
+grep -q 'vendor/unoq-mods/aosp/sepolicy/vendor' $D/BoardConfig.mk || {
+  printf '\n# UNO Q Mods (build-host/unoq-mods.sh)\nBOARD_SEPOLICY_DIRS += vendor/unoq-mods/aosp/sepolicy/vendor\n' >> $D/BoardConfig.mk
   echo "patched: $D/BoardConfig.mk"; }
+grep -q 'vendor/unoq-mods/aosp/sepolicy/system_ext_public' $D/BoardConfig.mk || {
+  printf 'SYSTEM_EXT_PUBLIC_SEPOLICY_DIRS += vendor/unoq-mods/aosp/sepolicy/system_ext_public\nSYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += vendor/unoq-mods/aosp/sepolicy/system_ext_private\n' >> $D/BoardConfig.mk
+  echo "patched: $D/BoardConfig.mk (unoq-mods system_ext sepolicy)"; }
 
 # Check.
 grep -n 'GREYBUS_UNOQ' $K/drivers/greybus/Kconfig $K/drivers/greybus/Makefile
