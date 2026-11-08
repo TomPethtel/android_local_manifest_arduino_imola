@@ -1,6 +1,7 @@
 #!/bin/bash
 # Device-tree fixes needed to boot the YAJATapps imola port, independent of the build host. Idempotent.
 set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
 cd ~/lineage-24
 
 # 1. system_server dies at startup with "Failed to create ashmem: No such file or directory": the 6.18 kernel
@@ -29,4 +30,11 @@ EOF
 ocd=vendor/arduino/imola/proprietary/vendor/bin/openocd-launcher
 grep -q 'init; poll off' "$ocd" || { sed -i 's/-c "telnet_port 4444; gdb_port disabled; init"/-c "telnet_port 4444; gdb_port disabled; init; poll off"/' "$ocd" && echo "patched: $ocd (poll off)"; }
 
-grep -q 'sys.use_memfd=true' "$mk" && [ -f "$te" ] && grep -q 'poll off' "$ocd" && echo "IMOLA FIXES OK"
+# 4. libcutils tells memfds from ashmem fds by readlink(/proc/self/fd/N). Chromium's renderer sandbox refuses
+#    readlink, so every shared-memory call in a WebView renderer fell through to ashmem: an ioctl, a stat of the
+#    missing /dev/ashmem and two error log lines each time, about half a core while a page renders. When the
+#    link can't be read, identify the memfd by its grow/shrink seals (only memfds carry them).
+if git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null; then :
+else git -C system/core apply "$HERE/libcutils-memfd-sandbox.patch" && echo "patched: system/core/libcutils/ashmem-dev.cpp (sandboxed memfd check)"; fi
+
+grep -q 'sys.use_memfd=true' "$mk" && [ -f "$te" ] && git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null && grep -q 'poll off' "$ocd" && echo "IMOLA FIXES OK"

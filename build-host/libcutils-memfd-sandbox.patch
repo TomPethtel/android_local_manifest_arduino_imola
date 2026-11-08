@@ -1,0 +1,32 @@
+diff --git a/libcutils/ashmem-dev.cpp b/libcutils/ashmem-dev.cpp
+index 4d3a70a..08df747 100644
+--- a/libcutils/ashmem-dev.cpp
++++ b/libcutils/ashmem-dev.cpp
+@@ -197,12 +197,15 @@ static int __ashmem_check_failure(int fd, int result) {
+ static bool is_memfd_fd(int fd) {
+     std::string fd_path = android::base::StringPrintf("/proc/self/fd/%d", fd);
+     std::string result;
+-    if (!android::base::Readlink(fd_path, &result)) {
++    bool have_link = android::base::Readlink(fd_path, &result);
++    if (!have_link && errno != EPERM && errno != EACCES) {
+         ALOGE("readlink(%s) failed: %m", fd_path.c_str());
+         return false;
+     }
+ 
+-    if (!result.starts_with("/memfd:")) {
++    // Sandboxed processes (Chromium renderers under seccomp) may not readlink /proc/self/fd. Without the
++    // name, the seal check below decides on its own: only a memfd can carry F_SEAL_GROW and F_SEAL_SHRINK.
++    if (have_link && !result.starts_with("/memfd:")) {
+         return false;
+     }
+ 
+@@ -212,7 +215,8 @@ static bool is_memfd_fd(int fd) {
+     // process is using it, leading to time of check to time of use issues.
+     int seals = fcntl(fd, F_GET_SEALS);
+     if (seals == -1) {
+-        ALOGE("is_memfd_fd(%d): F_GET_SEALS failed: %m", fd);
++        // Without the link name this is the normal answer for a non-memfd fd (EINVAL), not an error.
++        if (have_link) ALOGE("is_memfd_fd(%d): F_GET_SEALS failed: %m", fd);
+         return false;
+     }
+ 
