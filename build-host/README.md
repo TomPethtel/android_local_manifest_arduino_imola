@@ -110,6 +110,12 @@ trigger firing during that reboot). `brew install qdl`, put the JCTL jumper on, 
 cd arduino-images/flash && qdl --storage emmc prog_firehose_ddr.elf rawprogram0.xml patch0.xml
 ```
 
+`qdl-flash.sh <arduino-images dir>` does the same from the Mac. `qdl-flash.sh --keep-data <dir>` writes only
+`efi` (kernel, ramdisk, dtb) and `rootfs` (super), so `userdata` survives, including Developer options and Rooted
+debugging. Use it to update a board already on this layout (about 2 min). The full flash zeroes the heads of
+`userdata` and `metadata`. There is no jumper-free path: ABL never sees the kernel's `bootloader` reboot reason
+(`BootReason:0`), and the Armbian U-Boot has no USB controller for fastboot.
+
 Two device-tree fixes on top of the upstream port, applied by `imola-fixes.sh` (host-independent):
 
 * `sys.use_memfd=true`: the 6.18 kernel has no `/dev/ashmem`, and libcutils only switches to memfd from vendor
@@ -124,3 +130,4 @@ Serial console: JCTL pin 4 (TX), 6 (RX), 7 (GND), 1.8 V logic, 115200 8N1; an FT
 directly. On macOS hold the port open or the baud rate resets: `exec 3<>$dev; stty -f $dev raw 115200; cat <&3`.
 
 Status: LineageOS 24 boots to `sys.boot_completed=1` on the UNO Q from the native arm64 build.
+
