@@ -93,29 +93,20 @@ for svc in ('arduino-router', 'imola-bridge'):
 open(p, 'w').write(s)
 EOF
 
-# The device resets the MCU (dropping the loader's ready line, TLMM 70) whenever init.svc.arduino-router
-# becomes "stopped". In greybus mode the router never runs, but unoq-mods.rc's `stop arduino-router` still
-# sets that property, and the reset landed 2 s after unoq-greybus.sh had raised the line: the loader never
-# started the sketch. Keep the reset for bridge mode only, where it is Arduino's behaviour.
+# The device starts imola-bridge and resets the MCU from `on property:init.svc.arduino-router=...` triggers.
+# vendor_init may not read init.svc.* once SELinux enforces (init drops such vendor triggers), and in greybus
+# mode the reset dropped the loader's ready line under gb-unoq. vendor/unoq-mods' rc does both jobs in its
+# mode switch instead, so remove the triggers (including the bridge-only form earlier versions left).
 python3 - $rc <<'EOF'
-import sys
+import re, sys
 p = sys.argv[1]
 s = open(p).read()
-old = ('on property:init.svc.arduino-router=stopped\n'
-       '    stop imola-bridge\n'
-       '    exec_background - root system -- /vendor/bin/imola-gpio reset\n')
-new = ('on property:init.svc.arduino-router=stopped\n'
-       '    stop imola-bridge\n'
-       '\n'
-       '# Local (build-host/unoq-mods.sh): MCU reset only when bridge mode gives up the UART\n'
-       'on property:init.svc.arduino-router=stopped && property:vendor.unoq.mcu_mode=bridge\n'
-       '    exec_background - root system -- /vendor/bin/imola-gpio reset\n')
-if old in s:
-    s = s.replace(old, new)
-    open(p, 'w').write(s)
-    print('patched: %s (MCU reset in bridge mode only)' % p)
-elif new not in s:
-    sys.exit('init.imola.rc: router-stopped trigger not found')
+n = re.sub(r'\n# Local \(build-host/unoq-mods\.sh\): MCU reset only when bridge mode gives up the UART\n', '\n', s)
+n = re.sub(r'\non property:init\.svc\.arduino-router=[^\n]*\n(?:    [^\n]*\n)*', '\n', n)
+n = re.sub(r'\n{3,}', '\n\n', n)
+if n != s:
+    open(p, 'w').write(n)
+    print('patched: %s (init.svc.arduino-router triggers removed)' % p)
 EOF
 
 # 4. Device nodes for ModService.
@@ -139,7 +130,7 @@ grep -q 'vendor/unoq-mods/aosp/sepolicy/system_ext_public' $D/BoardConfig.mk || 
 grep -n 'GREYBUS_UNOQ' $K/drivers/greybus/Kconfig $K/drivers/greybus/Makefile
 grep -c '^CONFIG_GREYBUS' $defconfig
 grep -A3 -E '^service (arduino-router|imola-bridge) ' $rc | grep -E 'service|disabled'
-grep -n 'arduino-router=stopped' $rc
+! grep -n 'init.svc.arduino-router' $rc
 grep -n 'gpiochip' $ue
 grep -n 'unoq-mods' $D/device.mk $D/BoardConfig.mk
 echo "UNOQ MODS OK"
