@@ -6,7 +6,8 @@
 #   0. a tree wired in by this script's earlier version (unoq-mods.sh, vendor/unoq-mods) is renamed in
 #      place
 #   1. gb-unoq into drivers/greybus (CONFIG_GREYBUS_UNOQ) and the staging Greybus class drivers into
-#      imola_defconfig, all as modules
+#      imola_defconfig, all as modules, with Annex's patches to them (kernel/patches: gb-raw gets poll() and
+#      stays valid while open)
 #   2. load them at boot (vendor_dlkm modules.load)
 #   3. arduino-router and imola-bridge become disabled: vendor/annex's init rc starts either gb-unoq's
 #      line discipline or the router on /dev/ttyHS1 (persist.vendor.unoq.mcu_mode, default greybus)
@@ -37,6 +38,10 @@ EOF
 
 # 1. Kernel driver and config.
 install -m 644 $SRC/kernel/gb-unoq/gb-unoq.c $K/drivers/greybus/gb-unoq.c
+for p in $SRC/kernel/patches/*.patch; do
+  [ -e "$p" ] || continue
+  git -C $K apply --reverse --check "$PWD/$p" 2>/dev/null || { git -C $K apply "$PWD/$p"; echo "patched: $K ($(basename $p))"; }
+done
 grep -q 'config GREYBUS_UNOQ' $K/drivers/greybus/Kconfig || python3 - $K/drivers/greybus/Kconfig <<'EOF'
 import sys
 p = sys.argv[1]
