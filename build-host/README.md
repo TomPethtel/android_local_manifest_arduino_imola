@@ -213,3 +213,70 @@ How it behaves:
   boot marks it again.
 * `ddr` and `uefi_dtb` aren't in Qualcomm's list, so `slot-status.sh` counts 16 of 18 other `_a` entries
   marked successful.
+
+## 9. A/B OTA (2026-11-08)
+
+**Why it didn't work.** The board had A/B dynamic partitions and, since section 8, a boot HAL ABL listens to,
+but an OTA could not have worked:
+
+* `update_engine` wasn't on the image, so nothing could apply a payload (the Lineage Updater app was there).
+* The kernel, ramdisk and dtb were files in the single, unslotted `efi` FAT partition, and `boot.scr`
+  hard-coded `androidboot.slot_suffix=_a`. A slot switch would have booted the old kernel against `_a`.
+* U-Boot can't see the slot: ABL hands it no `androidboot.slot_suffix`.
+* Virtual A/B (`libsnapshot`) CHECKs that the dynamic partitions live in a partition named `super`. The port
+  kept Arduino's name, `rootfs`, so `update_engine` aborted at the start of every update.
+* The build offers `otapackage` only to devices with a recovery fstab, and this one has no recovery.
+
+**The layout now** (`ota-ab.sh`, `package-qdl-ab.patch`). The old 512 MB `efi` space is split, and nothing
+after it moves, so a keep-data flash converts a board and userdata survives:
+
+| GPT | Size | Holds |
+|---|---|---|
+| `efi` (p67) | 128 MB | `boot.scr` only. U-Boot's `do_boot` always loads it from `mmc 0:43`. |
+| `linux_a`, `linux_b` (p71, p72) | 192 MB each | The slot's `boot.img`: kernel, ramdisk, dtb, `BOARD_KERNEL_CMDLINE` |
+| `super` (p69, was `rootfs`) | 4 GB | The dynamic partitions |
+| `boot_a`, `boot_b` | 4 MB | U-Boot, with `uboot.slot=_a` / `_b` added to the image header's command line |
+
+**Boot path.** ABL picks `boot_a` or `boot_b` from the GPT slot bits and passes that image's header command
+line on in `/chosen/bootargs`. `boot.scr` reads `uboot.slot=` from there (`fdt get value`, `setexpr sub`),
+reads `linux_<slot>` sized from the boot image header, and `bootm`s it with
+`androidboot.slot_suffix=<slot> androidboot.selinux=<mode>` in front of the image's own command line. On
+failure it resets, so ABL counts the attempt.
+
+**U-Boot traps.**
+
+* This U-Boot ignores the load addresses in the boot image header and runs the kernel where it sits in the
+  image. An arm64 kernel must start on a 2 MB boundary, so `boot.scr` reads the image to `0x10a600000` minus
+  one page. Unaligned, the kernel panics at 0.008 s ("kernel stack overflow").
+* A panic that early comes before `qcom_scm` clears the download cookie, so the board drops into Qualcomm's
+  RAM-dump mode (`QUSB_BULK`, 05c6:900e) and waits for a power cycle.
+* Commands typed over the serial console lose characters on long lines (no flow control). Type about 4 ms
+  per character.
+
+**Build and install.**
+
+```bash
+bash ~/build-host/ota-ab.sh                      # once, after selinux-fixes.sh and bootctrl-qti.sh
+bash ~/build-host/m-target.sh droid otapackage   # -> out-arm64/target/product/imola/lineage_imola-ota.zip
+```
+
+The zip is a full OTA (about 1 GB). `linux.img` (a copy of `boot.img`) reaches target-files as a radio image:
+the build's custom-image route only records images when AVB is on, which this port doesn't use. On the Mac,
+`ota-install.sh <zip>` pushes it to `/data/ota_package` and hands the payload to `update_engine` over adb root,
+as the Updater app would; reboot to switch slots.
+
+**Verified on board 2** (keep-data flash of the new layout, then the OTA from the same build):
+
+* The install took 2 min 49 s and staged snapshots of the six dynamic partitions, writing `linux_b` directly.
+  `boot_b` went active with retry 7, and there were no denials.
+* On reboot: ABL `Booting from slot (_b)`, U-Boot `Android slot _b`, kernel `androidboot.slot_suffix=_b`.
+  The merge finished about 15 s after boot completed, and `boot_b` was marked successful.
+* A plain reboot of the merged slot passes `image-check.sh` 13/13.
+* `ota-install.sh` then installed the same zip back to `_a`, and the board switched, merged and marked `_a`
+  successful the same way, again with no denials.
+* After the merge, `boot_a` is marked unbootable. That's normal Virtual A/B: the old slot's dynamic
+  partitions are gone.
+
+**Not done.** No update server: the Updater app's `lineage.updater.uri` is unset, so OTAs go in with
+`ota-install.sh`. No incremental OTAs yet. Once, the board hard-reset during a 1 GB `adb push`, with the
+kernel log cut off mid-line at `arm-smmu c600`; a retry went through.
