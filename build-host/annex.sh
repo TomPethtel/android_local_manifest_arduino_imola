@@ -125,9 +125,23 @@ if n != s:
     print('patched: %s (init.svc.arduino-router triggers removed)' % p)
 EOF
 
-# 4. Device nodes for ModService.
+# 4. Device nodes for ModService: Annex's ueventd rules, appended once and kept current (they change with
+#    Annex, e.g. gb-raw's nodes are /dev/gb!raw*).
 ue=$D/ueventd.imola.rc
-grep -q '# Annex: Greybus device nodes' $ue || { cat $SRC/aosp/ueventd.annex.rc >> $ue; echo "patched: $ue"; }
+python3 - $ue $SRC/aosp/ueventd.annex.rc <<'EOF'
+import re, sys
+ue, rules = sys.argv[1], sys.argv[2]
+s = open(ue).read()
+block = open(rules).read()
+if not block.endswith('\n'):
+    block += '\n'
+# The appended block: our header comment through the rule lines that follow it.
+n = re.sub(r'(?m)^# Annex: Greybus device nodes.*\n(?:#.*\n|/dev/.*\n)*', '', s)
+n = n.rstrip('\n') + '\n\n' + block
+if n != s:
+    open(ue, 'w').write(n)
+    print('patched: %s (Annex ueventd rules)' % ue)
+EOF
 
 # 5. Product and sepolicy.
 grep -q 'vendor/annex/aosp/product.mk' $D/device.mk || {
