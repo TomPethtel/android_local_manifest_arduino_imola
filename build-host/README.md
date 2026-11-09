@@ -132,11 +132,12 @@ directly. On macOS hold the port open or the baud rate resets: `exec 3<>$dev; st
 
 Status: LineageOS 24 boots to `sys.boot_completed=1` on the UNO Q from the native arm64 build.
 
-## 6. UNO Q Mods (2026-11-08)
+## 6. Annex: the STM32 as a Greybus accessory (2026-11-08)
 
-`unoq-mods.sh` builds the STM32 into the image as a Moto-Mods-style Greybus accessory. The project is a
-separate repo (unoq-mods). Its `aosp/build-prebuilts.sh` and `aosp/sync-to-vm.sh` put what the build needs at
-`vendor/unoq-mods`, and then this script wires it in:
+`annex.sh` builds the UNO Q's STM32 into the image as a Greybus accessory, with Motorola's Moto Mods as the
+design reference. The project is a separate repo, Annex (renamed for trademark reasons; `annex.sh` renames a
+tree wired in under the old name). Its `aosp/build-prebuilts.sh` and `aosp/sync-to-vm.sh` put what the build
+needs at `vendor/annex`, and then this script wires it in:
 
 * the `gb-unoq` Greybus host (in-kernel SVC) as `CONFIG_GREYBUS_UNOQ`, plus the staging Greybus class drivers,
   all loaded at boot from `vendor_dlkm`. `LEDS_CLASS_FLASH` is needed too, or olddefconfig silently drops
@@ -146,11 +147,11 @@ separate repo (unoq-mods). Its `aosp/build-prebuilts.sh` and `aosp/sync-to-vm.sh
   become `disabled`, and the device's MCU reset on router stop only runs in bridge mode. Otherwise it drops
   the loader's ready line right after gb-unoq raised it, and the sketch never starts.
 * ModService preloaded as a priv-app on the system uid. Android 17 refuses a sideloaded platform-signed app
-  that joins `android.uid.system`. The Mods Demo app ships alongside it.
+  that joins `android.uid.system`. The Annex Demo app ships alongside it.
 * ueventd gives the Greybus gpiochips, `/dev/gb/raw*` and `/dev/ttyGB*` to group `system`.
 
 Verified 2026-11-08 on board 2, after a keep-data flash and a cold boot: the sketch enumerates, ModService
-(uid 1000) attaches it within a second of starting, and the demo app drives the LEDs. unoq-mods'
+(uid 1000) attaches it within a second of starting, and the demo app drives the LEDs. Annex's
 `tools/image-check.sh` runs the checks.
 
 ## 7. Performance and SELinux enforcing (2026-11-08)
@@ -177,7 +178,7 @@ BoardConfig.
   `persist.demo.rotationlock` moved to the product build.prop. `usb-adb-debug.sh` deletes the vendor rc's
   `sys.usb.config` override; AOSP's init.usb.rc already applies the persist value.
 * **Treble.** `gpio_chip_device` moved to system_ext public so system-side ModService can be granted it.
-  `unoq-mods.sh` folds the device's `init.svc.arduino-router` triggers into the Mods mode switch, since
+  `annex.sh` folds the device's `init.svc.arduino-router` triggers into the Annex mode switch, since
   vendor_init can't read `init.svc.*`.
 * **Sketch uploads** stage in `/data/vendor/openocd`. AOSP's shell.te neverallows keep every vendor domain out of
   `/data/local/tmp`.

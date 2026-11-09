@@ -7,7 +7,7 @@
 #                                         first if the board booted permissive, and back afterwards), then report
 #                                         what was denied
 #
-# Needs adb root (Rooted debugging). The smoke test opens Settings, the browser and Mods Demo, toggles a Mods
+# Needs adb root (Rooted debugging). The smoke test opens Settings, the browser and Annex Demo, toggles an Annex
 # Demo LED, and lists Greybus devices; add to it as features are covered.
 set -uo pipefail
 enforce=0
@@ -24,7 +24,7 @@ if [ $enforce = 1 ]; then
   "${A[@]}" shell '
     am start -W -a android.settings.SETTINGS >/dev/null 2>&1; sleep 3
     am start -W -n org.lineageos.jelly/.MainActivity >/dev/null 2>&1; sleep 8
-    am start -W -n dev.unoq.mods.sample/.MainActivity >/dev/null 2>&1; sleep 4
+    am start -W -n com.trustlumina.annex.sample/.MainActivity >/dev/null 2>&1; sleep 4
     input tap 230 254; sleep 2; input tap 500 254; sleep 2
     ls /sys/bus/greybus/devices/ >/dev/null; input keyevent KEYCODE_HOME; sleep 2
   '

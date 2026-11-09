@@ -45,7 +45,7 @@ dontaudit arduino_router proc_net:file read;
 # imola-bridge and OpenOCD talk TCP on localhost (telnet 4444); netd marks their sockets.
 net_domain(imola_gpio)
 
-# Sketch uploads (unoq-mods tools/upload-sketch.sh): adb root pushes the loader and sketch to
+# Sketch uploads (Annex tools/upload-sketch.sh): adb root pushes the loader and sketch to
 # /data/vendor/openocd (created by init.imola.rc) and OpenOCD flashes them from there. /data/local/tmp is not an
 # option: shell.te's neverallows keep every vendor domain out of shell_data_file.
 type imola_openocd_data_file, file_type, data_file_type;
