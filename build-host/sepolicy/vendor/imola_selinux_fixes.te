@@ -54,6 +54,8 @@ allow imola_gpio imola_openocd_data_file:file r_file_perms;
 
 # OpenOCD binds its telnet and Tcl ports, which only listed domains may connect to (system_ext/public/openocd.te).
 allow imola_gpio openocd_port:tcp_socket name_bind;
+# In bridge mode imola-bridge, which also runs as imola_gpio, drives OpenOCD over its telnet port.
+allow imola_gpio openocd_port:tcp_socket name_connect;
 # glibc's loader (OpenOCD is a glibc binary) probes library paths, including /data/local/tmp.
 dontaudit imola_gpio shell_data_file:dir search;
 
