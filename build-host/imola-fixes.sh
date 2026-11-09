@@ -32,6 +32,9 @@ EOF
 #    about 4% of a core forever. Uploads and `reset` poll explicitly, so turn background polling off.
 ocd=vendor/arduino/imola/proprietary/vendor/bin/openocd-launcher
 grep -q 'init; poll off' "$ocd" || { sed -i 's/-c "telnet_port 4444; gdb_port disabled; init"/-c "telnet_port 4444; gdb_port disabled; init; poll off"/' "$ocd" && echo "patched: $ocd (poll off)"; }
+# OpenOCD's Tcl also has `exec`, which runs commands as root in OpenOCD's domain for anyone who reaches its ports.
+# Nothing here uses it, so remove the command once OpenOCD is up.
+grep -q 'rename exec {}' "$ocd" || { sed -i 's/init; poll off"/init; poll off; rename exec {}"/' "$ocd" && echo "patched: $ocd (no exec)"; }
 
 # 4. libcutils tells memfds from ashmem fds by readlink(/proc/self/fd/N). Chromium's renderer sandbox refuses
 #    readlink, so every shared-memory call in a WebView renderer fell through to ashmem: an ioctl, a stat of the
@@ -40,4 +43,4 @@ grep -q 'init; poll off' "$ocd" || { sed -i 's/-c "telnet_port 4444; gdb_port di
 if git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null; then :
 else git -C system/core apply "$HERE/libcutils-memfd-sandbox.patch" && echo "patched: system/core/libcutils/ashmem-dev.cpp (sandboxed memfd check)"; fi
 
-grep -q 'PRODUCT_PRODUCT_PROPERTIES += sys.use_memfd=true' "$mk" && [ -f "$te" ] && git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null && grep -q 'poll off' "$ocd" && echo "IMOLA FIXES OK"
+grep -q 'PRODUCT_PRODUCT_PROPERTIES += sys.use_memfd=true' "$mk" && [ -f "$te" ] && git -C system/core apply --reverse --check "$HERE/libcutils-memfd-sandbox.patch" 2>/dev/null && grep -q 'poll off' "$ocd" && grep -q 'rename exec {}' "$ocd" && echo "IMOLA FIXES OK"
