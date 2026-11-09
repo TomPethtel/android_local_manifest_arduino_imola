@@ -1,0 +1,349 @@
+--- a/tools/package_qdl.py
++++ b/tools/package_qdl.py
+@@ -8,7 +8,7 @@
+ Package Layout:
+   arduino-images/
+   ├── disk-sdcard.img.esp       # 512MB EFI/boot partition (P67: boot.scr, Image, ramdisk, dtb)
+-  ├── disk-sdcard.img.root      # 4096MB Root/OS partition (P69: rootfs)
++  ├── disk-sdcard.img.root      # 4096MB dynamic partitions (P69: super)
+   └── flash/                    # Qualcomm firmware, programmer, partition tables & XMLs
+       ├── prog_firehose_ddr.elf # EDL programmer
+       ├── rawprogram0.xml       # References ../disk-sdcard.img.esp & ../disk-sdcard.img.root
+@@ -45,17 +45,25 @@
+ LAST_USABLE_LBA = TOTAL_DISK_SECTORS - 34  # 61071326
+ 
+ # Partition Layout (Sectors: 512 bytes each)
+-# P67: efi (512MB)
++# P67: efi (128MB). Holds only U-Boot's boot.scr, which picks the A/B slot; U-Boot's do_boot always loads it
++# from partition 67 (mmc 0:43), so this entry keeps its number.
+ EFI_START_SECTOR = 985408
+-EFI_SECTORS = 1048576  # 512 MB
+-EFI_END_SECTOR = EFI_START_SECTOR + EFI_SECTORS - 1  # 2033983
++EFI_SECTORS = 262144  # 128 MB
++EFI_END_SECTOR = EFI_START_SECTOR + EFI_SECTORS - 1  # 1247551
+ 
++# P71/P72: linux_a, linux_b (192MB each), in the rest of the space the 512MB efi used to take. Each holds the
++# slot's Android boot image (kernel, ramdisk, dtb, command line); A/B OTAs write the inactive one.
++LINUX_SECTORS = 393216  # 192 MB
++LINUX_A_START_SECTOR = EFI_END_SECTOR + 1  # 1247552
++LINUX_B_START_SECTOR = LINUX_A_START_SECTOR + LINUX_SECTORS  # 1640768
++
+ # P68: metadata (64MB), moved before rootfs
+ METADATA_START_SECTOR = 2033984
+ METADATA_SECTORS = 131072  # 64 MB
+ METADATA_END_SECTOR = METADATA_START_SECTOR + METADATA_SECTORS - 1  # 2165055
+ 
+-# P69: rootfs (4096MB)
++# P69: super (4096MB), the dynamic partitions. Arduino's layout calls this partition rootfs; Virtual A/B
++# (libsnapshot) insists on the name super.
+ ROOTFS_START_SECTOR = METADATA_END_SECTOR + 1
+ ROOTFS_SECTORS = 8388608  # 4096 MB
+ ROOTFS_END_SECTOR = ROOTFS_START_SECTOR + ROOTFS_SECTORS - 1  # 10553663
+@@ -67,6 +75,8 @@
+ 
+ if ROOTFS_END_SECTOR + 1 != USERDATA_START_SECTOR:
+     raise ValueError("rootfs and userdata partition boundaries are not contiguous")
++if LINUX_B_START_SECTOR + LINUX_SECTORS != METADATA_START_SECTOR:
++    raise ValueError("efi, linux_a and linux_b must fill the space before metadata exactly")
+ 
+ LINUX_FS_GUID = uuid.UUID("0fc63daf-8483-4772-8e79-3d69d8477de4").bytes_le
+ 
+@@ -131,11 +141,12 @@
+     # GPT Partition Entries start at sector 2 (offset 1024) in gpt_main0.bin
+     # P67 (index 66): efi (512MB)
+     # P68 (index 67): metadata (64MB)
+-    # P69 (index 68): rootfs (4096MB)
++    # P69 (index 68): super (4096MB)
+     # P70 (index 69): userdata (~24.1GB)
++    # P71 (index 70): linux_a (192MB), P72 (index 71): linux_b (192MB)
+ 
+     entry_metadata = create_gpt_entry("metadata", METADATA_START_SECTOR, METADATA_END_SECTOR, LINUX_FS_GUID, 0)
+-    entry_rootfs = create_gpt_entry("rootfs", ROOTFS_START_SECTOR, ROOTFS_END_SECTOR, LINUX_FS_GUID, 0)
++    entry_rootfs = create_gpt_entry("super", ROOTFS_START_SECTOR, ROOTFS_END_SECTOR, LINUX_FS_GUID, 0)
+     entry_userdata = create_gpt_entry("userdata", USERDATA_START_SECTOR, USERDATA_END_SECTOR, LINUX_FS_GUID, 0)
+ 
+     # Insert into main GPT (offset = 1024 + idx * 128)
+@@ -143,6 +154,16 @@
+     main_data[1024 + 68 * 128 : 1024 + 69 * 128] = entry_rootfs
+     main_data[1024 + 69 * 128 : 1024 + 70 * 128] = entry_userdata
+ 
++    efi_off = 1024 + 66 * 128
++    if main_data[efi_off + 56 : efi_off + 62].decode("utf-16le") != "efi":
++        raise ValueError("GPT entry 66 is not efi")
++    struct.pack_into("<QQ", main_data, efi_off + 32, EFI_START_SECTOR, EFI_END_SECTOR)
++    for idx, name, start in ((70, "linux_a", LINUX_A_START_SECTOR), (71, "linux_b", LINUX_B_START_SECTOR)):
++        off = 1024 + idx * 128
++        if main_data[off : off + 16] != bytes(16):
++            raise ValueError(f"GPT entry {idx} is not free for {name}")
++        main_data[off : off + 128] = create_gpt_entry(name, start, start + LINUX_SECTORS - 1, LINUX_FS_GUID, 0)
++
+     primary_header_offset = 512
+     primary_num_entries = struct.unpack_from("<I", main_data, primary_header_offset + 80)[0]
+     primary_entry_size = struct.unpack_from("<I", main_data, primary_header_offset + 84)[0]
+@@ -180,103 +201,118 @@
+         f.write(backup_data)
+ 
+     print(f"[+] Successfully generated Android GPT tables in flash/:")
+-    print(f"    - P67 efi:      {EFI_START_SECTOR} .. {EFI_END_SECTOR} (512 MB)")
++    print(f"    - P67 efi:      {EFI_START_SECTOR} .. {EFI_END_SECTOR} (128 MB)")
++    print(f"    - P71 linux_a:  {LINUX_A_START_SECTOR} .. {LINUX_A_START_SECTOR + LINUX_SECTORS - 1} (192 MB)")
++    print(f"    - P72 linux_b:  {LINUX_B_START_SECTOR} .. {LINUX_B_START_SECTOR + LINUX_SECTORS - 1} (192 MB)")
+     print(f"    - P68 metadata: {METADATA_START_SECTOR} .. {METADATA_END_SECTOR} (64 MB)")
+-    print(f"    - P69 rootfs:   {ROOTFS_START_SECTOR} .. {ROOTFS_END_SECTOR} (4096 MB)")
++    print(f"    - P69 super:    {ROOTFS_START_SECTOR} .. {ROOTFS_END_SECTOR} (4096 MB)")
+     print(f"    - P70 userdata: {USERDATA_START_SECTOR} .. {USERDATA_END_SECTOR} (~{(USERDATA_SECTORS*512)/(1024**3):.2f} GB)")
+ 
+ 
+-def build_efi_image(out_path, kernel_path, ramdisk_path, dtb_path, cmdline):
+-    print(f"[*] Building 512MB boot partition ({out_path})...")
++# U-Boot script in efi. ABL boots U-Boot from boot_a or boot_b by the GPT slot bits; each copy's boot image
++# header command line carries uboot.slot=_a or _b (make_uboot_slot_image), which ABL hands on in
++# /chosen/bootargs. Read the slot from there, load that slot's Android boot image from linux_a or linux_b
++# (sized from its header), and bootm it; U-Boot prepends bootargs to the image's own command line. This
++# U-Boot ignores the header's load addresses and runs the kernel where it sits in the image, and an arm64
++# kernel must start on a 2 MB boundary (unaligned, it panics at once), so the image goes one page below one.
++# On failure, reset so ABL counts the attempt.
++BOOT_CMD = """# LineageOS A/B boot for Arduino Uno Q (Imola), written by device/arduino/imola/tools/package_qdl.py
++setenv slot _a
++fdt addr ${fdtcontroladdr}
++fdt get value ablargs /chosen bootargs
++setexpr ablslot sub ".*uboot.slot=(_[ab]).*" "\\\\1" "${ablargs}"
++if test "${ablslot}" = "_b"; then setenv slot _b; fi
++echo "Android slot ${slot}"
++if part start mmc 0 linux${slot} lstart; then
++  mmc dev 0
++  mmc read ${loadaddr} ${lstart} 8
++  setexpr a ${loadaddr} + 24; setexpr.l pg *${a}
++  setexpr pm ${pg} - 1
++  setexpr total ${pg}
++  for f in 8 10 18 660 670; do setexpr a ${loadaddr} + ${f}; setexpr.l n *${a}; setexpr n ${n} + ${pm}; setexpr n ${n} / ${pg}; setexpr n ${n} * ${pg}; setexpr total ${total} + ${n}; done
++  setexpr blocks ${total} + 1ff; setexpr blocks ${blocks} / 200
++  setexpr img 10a600000 - ${pg}
++  mmc read ${img} ${lstart} ${blocks}
++  setenv bootargs "androidboot.slot_suffix=${slot} @EXTRA@"
++  bootm ${img}
++fi
++echo "Could not boot slot ${slot}"
++reset
++"""
+ 
++
++def make_uboot_slot_image(src, dst, slot):
++    """Copies the U-Boot boot image, adding uboot.slot=<slot> to its header command line (not hashed)."""
++    data = bytearray(open(src, "rb").read())
++    if data[:8] != b"ANDROID!":
++        raise ValueError(f"{src} is not an Android boot image")
++    cmdline = data[64:64 + 512].rstrip(b"\0").decode()
++    cmdline = " ".join([w for w in cmdline.split() if not w.startswith("uboot.slot=")] + [f"uboot.slot={slot}"])
++    if len(cmdline) >= 512:
++        raise ValueError("U-Boot boot image command line too long")
++    data[64:64 + 512] = cmdline.encode().ljust(512, b"\0")
++    open(dst, "wb").write(data)
++
++
++def build_efi_image(out_path, extra_cmdline):
++    print(f"[*] Building 128MB efi partition ({out_path})...")
++
+     mkfs_vfat = shutil.which("mkfs.vfat") or "/usr/sbin/mkfs.vfat"
+     if not os.path.isfile(mkfs_vfat) and not shutil.which("mkfs.vfat"):
+         sys.exit("[-] ERROR: 'mkfs.vfat' is required. Run: sudo apt install -y dosfstools")
+ 
+     mcopy = shutil.which("mcopy")
+-    mmd = shutil.which("mmd")
+-    if not mcopy or not mmd:
+-        sys.exit("[-] ERROR: 'mtools' (mcopy, mmd) is required.\n    Please run: sudo apt install -y mtools")
++    if not mcopy:
++        sys.exit("[-] ERROR: 'mtools' (mcopy) is required.\n    Please run: sudo apt install -y mtools")
+ 
+-    # 1. Allocate 512MB empty image
+     with open(out_path, "wb") as f:
+-        f.truncate(512 * 1024 * 1024)
++        f.truncate(EFI_SECTORS * 512)
++    subprocess.run([mkfs_vfat, "-F", "32", "-n", "EFI", out_path], check=True, stdout=subprocess.DEVNULL)
+ 
+-    # 2. Format as FAT32
+-    cmd = [mkfs_vfat, "-F", "32", "-n", "EFI", out_path]
+-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+-
+-    # 3. Create /extlinux directory
+-    subprocess.run([mmd, "-i", out_path, "::/extlinux"], check=True, stdout=subprocess.DEVNULL)
+-
+-    # 4. Generate boot configs
++    boot_cmd_text = BOOT_CMD.replace("@EXTRA@", extra_cmdline)
+     with tempfile.TemporaryDirectory() as tmp_dir:
+-        # A) Native U-Boot boot.cmd & boot.scr
+-        boot_cmd_text = (
+-            "# LineageOS 24 U-Boot Boot Script for Arduino Uno Q (Imola)\n"
+-            'setenv kernel_addr_r "0x42000000"\n'
+-            'setenv fdt_addr_r "0x48000000"\n'
+-            'setenv ramdisk_addr_r "0x82000000"\n'
+-            'setenv devtype "mmc"\n'
+-            'setenv devnum "0"\n'
+-            'test -n "${distro_bootpart}" || setenv distro_bootpart "43"\n'
+-            f'setenv bootargs "{cmdline}"\n'
+-            "load ${devtype} ${devnum}:${distro_bootpart} ${kernel_addr_r} Image\n"
+-            "load ${devtype} ${devnum}:${distro_bootpart} ${ramdisk_addr_r} ramdisk.img\n"
+-            "setenv ramdisk_size ${filesize}\n"
+-            "load ${devtype} ${devnum}:${distro_bootpart} ${fdt_addr_r} dtb.img\n"
+-            'echo "Booting Android"\n'
+-            "booti ${kernel_addr_r} ${ramdisk_addr_r}:${ramdisk_size} ${fdt_addr_r}\n"
+-        )
+         boot_cmd_file = os.path.join(tmp_dir, "boot.cmd")
+         with open(boot_cmd_file, "w") as f:
+             f.write(boot_cmd_text)
+-
+         boot_scr_file = os.path.join(tmp_dir, "boot.scr")
+         with open(boot_scr_file, "wb") as f:
+             f.write(make_uimage_script(boot_cmd_text))
+-
+-        # B) extlinux.conf
+-        extlinux_conf_text = (
+-            "default LineageOS\n"
+-            "timeout 10\n"
+-            "\n"
+-            "label LineageOS\n"
+-            "  menu label LineageOS 24 (Android 17)\n"
+-            "  kernel /Image\n"
+-            "  initrd /ramdisk.img\n"
+-            "  fdt /dtb.img\n"
+-            f"  append {cmdline}\n"
+-        )
+-        extlinux_conf_file = os.path.join(tmp_dir, "extlinux.conf")
+-        with open(extlinux_conf_file, "w") as f:
+-            f.write(extlinux_conf_text)
+-
+-        # C) uInitrd (uImage wrapped ramdisk)
+-        uinitrd_file = os.path.join(tmp_dir, "uInitrd")
+-        with open(ramdisk_path, "rb") as rf:
+-            ramdisk_data = rf.read()
+-        with open(uinitrd_file, "wb") as uf:
+-            uf.write(make_uimage_ramdisk(ramdisk_data))
+-
+-        # 5. Copy boot configs and OS artifacts into FAT32 partition
+         subprocess.run([mcopy, "-i", out_path, boot_cmd_file, "::/boot.cmd"], check=True)
+         subprocess.run([mcopy, "-i", out_path, boot_scr_file, "::/boot.scr"], check=True)
+-        subprocess.run([mcopy, "-i", out_path, extlinux_conf_file, "::/extlinux/extlinux.conf"], check=True)
+-        subprocess.run([mcopy, "-i", out_path, kernel_path, "::/Image"], check=True)
+-        subprocess.run([mcopy, "-i", out_path, ramdisk_path, "::/ramdisk.img"], check=True)
+-        subprocess.run([mcopy, "-i", out_path, uinitrd_file, "::/uInitrd"], check=True)
+-        subprocess.run([mcopy, "-i", out_path, dtb_path, "::/dtb.img"], check=True)
+-        subprocess.run([mcopy, "-i", out_path, dtb_path, "::/qrb2210-arduino-imola.dtb"], check=True)
+ 
+     print(f"[+] disk-sdcard.img.esp created successfully ({os.path.getsize(out_path) // (1024*1024)} MB).")
+-    print(f"    - Native U-Boot Script:     /boot.scr (with 8-byte subheader)")
+-    print(f"    - Extlinux Config:          /extlinux/extlinux.conf")
+-    print(f"    - Android Kernel Image:     /Image")
+-    print(f"    - Ramdisk / uInitrd:        /ramdisk.img & /uInitrd")
+-    print(f"    - Device Tree Blob:         /dtb.img & /qrb2210-arduino-imola.dtb")
++    print(f"    - Slot-picking U-Boot script: /boot.scr (source: /boot.cmd)")
+ 
+ 
++def patch_rawprogram_ab(path):
++    """efi shrinks to 128MB, boot_a/boot_b get their slot's U-Boot copy, linux_a/linux_b get boot.img,
++    rootfs is called super."""
++    tree = ET.parse(path)
++    root = tree.getroot()
++    programs = {e.get("label"): e for e in root.iter("program")}
++    efi = programs["efi"]
++    efi.set("num_partition_sectors", str(EFI_SECTORS))
++    efi.set("size_in_KB", f"{EFI_SECTORS / 2:.1f}")
++    for slot in ("_a", "_b"):
++        programs["boot" + slot].set("filename", f"boot-uboot{slot}.img")
++    if "rootfs" in programs:
++        programs["rootfs"].set("label", "super")
++    for label in ("linux_a", "linux_b"):
++        if label in programs:
++            root.remove(programs[label])
++    for label, start in (("linux_a", LINUX_A_START_SECTOR), ("linux_b", LINUX_B_START_SECTOR)):
++        e = ET.SubElement(root, "program")
++        for k, v in efi.attrib.items():
++            e.set(k, v)
++        e.set("label", label)
++        e.set("filename", "../linux.img")
++        e.set("start_sector", str(start))
++        e.set("num_partition_sectors", str(LINUX_SECTORS))
++        e.set("size_in_KB", f"{LINUX_SECTORS / 2:.1f}")
++        e.set("start_byte_hex", hex(start * 512))
++    tree.write(path)
++
++
+ def process_super_image(src_super, dst_super, simg2img_bin):
+     print(f"[*] Processing super image: {src_super} -> {dst_super}")
+     with open(src_super, "rb") as f:
+@@ -312,19 +348,9 @@
+     )
+     parser.add_argument(
+         "--cmdline",
+-        default=(
+-            "earlycon console=tty0 console=ttyMSM0,115200n8 init=/init "
+-            "clk_ignore_unused pd_ignore_unused "
+-            "androidboot.hardware=imola androidboot.boot_devices=soc@0/4744000.mmc "
+-            "androidboot.force_super_partition=rootfs "
+-            "androidboot.verifiedbootstate=orange androidboot.slot_suffix=_a "
+-            "androidboot.selinux=" + os.environ.get("IMOLA_SELINUX", "enforcing") + " efi=noruntime "
+-            "androidboot.serialno=imola0001 "
+-            "firmware_class.path=/vendor/firmware,/vendor/firmware/qcom "
+-            "vt.global_cursor_default=0 "
+-            "printk.devkmsg=on loglevel=7"
+-        ),
+-        help="Kernel command line to embed in /boot.scr",
++        default="androidboot.selinux=" + os.environ.get("IMOLA_SELINUX", "enforcing"),
++        help="Kernel arguments boot.scr adds in front of the slot's boot.img command line "
++             "(androidboot.slot_suffix is always added)",
+     )
+ 
+     args = parser.parse_args()
+@@ -392,7 +418,8 @@
+     if not os.path.isfile(simg2img_bin):
+         simg2img_bin = shutil.which("simg2img")
+ 
+-    for fpath in [kernel_path, ramdisk_path, dtb_path]:
++    bootimg_path = os.path.join(product_out, "boot.img")
++    for fpath in [kernel_path, ramdisk_path, dtb_path, bootimg_path]:
+         if not os.path.isfile(fpath):
+             sys.exit(f"[-] ERROR: Missing required Android artifact: {fpath}")
+ 
+@@ -421,9 +448,13 @@
+ 
+     if bootloader_src:
+         print(f"[*] Copying bootloader boot.img from: {bootloader_src}")
+-        shutil.copy2(bootloader_src, os.path.join(flash_dir, "boot.img"))
++        for slot in ("_a", "_b"):
++            make_uboot_slot_image(bootloader_src, os.path.join(flash_dir, f"boot-uboot{slot}.img"), slot)
++        stale = os.path.join(flash_dir, "boot.img")
++        if os.path.exists(stale):
++            os.remove(stale)
+     else:
+-        print("[-] WARNING: bootloader boot.img not found in vendor/arduino/imola/proprietary/bootloader/boot.img or qcombin!")
++        sys.exit("[-] ERROR: bootloader boot.img not found in vendor/arduino/imola/proprietary/bootloader/boot.img or qcombin")
+ 
+     # 2. Generate Android GPT partitions into flash_dir
+     patch_gpt_tables(qcombin_board_dir, flash_dir)
+@@ -432,10 +463,13 @@
+     src_rawprogram = os.path.join(top_dir, "device/arduino/imola/tools/rawprogram0.xml")
+     dst_rawprogram = os.path.join(flash_dir, "rawprogram0.xml")
+     shutil.copy2(src_rawprogram, dst_rawprogram)
++    patch_rawprogram_ab(dst_rawprogram)
+ 
+-    # 4. Build disk-sdcard.img.esp (512MB boot partition) in package root
++    # 4. Build disk-sdcard.img.esp (128MB efi: the slot-picking boot.scr) and linux.img (boot.img, written to
++    #    linux_a and linux_b) in package root
+     esp_img_path = os.path.join(out_dir, "disk-sdcard.img.esp")
+-    build_efi_image(esp_img_path, kernel_path, ramdisk_path, dtb_path, args.cmdline)
++    build_efi_image(esp_img_path, args.cmdline)
++    shutil.copy2(bootimg_path, os.path.join(out_dir, "linux.img"))
+ 
+     # 5. Process disk-sdcard.img.root (unsparsed super.img) in package root
+     if not args.skip_super:
+@@ -464,8 +498,9 @@
+     print(f" Location: {out_dir}")
+     print(" Package Layout:")
+     print(f"   {os.path.basename(out_dir)}/")
+-    print("   ├── disk-sdcard.img.esp       (512MB EFI/boot partition)")
+-    print("   ├── disk-sdcard.img.root      (4096MB LineageOS 24 super.img)")
++    print("   ├── disk-sdcard.img.esp       (128MB efi: U-Boot's slot-picking boot.scr)")
++    print("   ├── linux.img                 (boot.img for linux_a and linux_b)")
++    print("   ├── disk-sdcard.img.root      (4096MB LineageOS 24 super.img, for the super partition)")
+     print("   └── flash/                    (Qualcomm firmware, EDL programmer, XMLs)")
+     print("")
+     print(" Compatible Flashing Methods:")

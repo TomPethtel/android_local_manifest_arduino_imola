@@ -1,0 +1,10 @@
+# linux_a/linux_b hold each slot's Android boot image (build-host/ota-ab.sh). boot_block_device is what
+# update_engine may write when it applies an OTA to the inactive slot.
+/dev/block/by-name/linux_[ab]                                   u:object_r:boot_block_device:s0
+/dev/block/bootdevice/by-name/linux_[ab]                        u:object_r:boot_block_device:s0
+/dev/block/platform/soc@0/4744000\.mmc/by-name/linux_[ab]       u:object_r:boot_block_device:s0
+
+# The dynamic partitions' container, renamed from Arduino's rootfs to super (Virtual A/B needs that name).
+/dev/block/by-name/super                                        u:object_r:super_block_device:s0
+/dev/block/bootdevice/by-name/super                             u:object_r:super_block_device:s0
+/dev/block/platform/soc@0/4744000\.mmc/by-name/super            u:object_r:super_block_device:s0
