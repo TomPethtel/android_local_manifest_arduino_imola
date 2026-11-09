@@ -13,6 +13,12 @@
 #   - Virtual A/B (libsnapshot) CHECKs that the dynamic partitions live in a partition named super; this port
 #     kept Arduino's name, rootfs, and update_engine aborted at the start of every update. The partition is
 #     renamed super (same place, so data survives).
+#   - update_engine was not on the image, so nothing could apply a payload. device.mk adds it, and linux joins
+#     AB_OTA_PARTITIONS so an OTA writes it with the rest of the slot. linux.img (a copy of boot.img) goes to
+#     target-files as a radio image (RADIO/, which payload generation reads): the build's custom-image route
+#     only records images when AVB is on, which this port doesn't use.
+#   - The OTA zip was never built: the build system offers `otapackage` only to devices with a recovery
+#     fstab, and this one has no recovery. PRODUCT_BUILD_GENERIC_OTA_PACKAGE is its opt-in.
 #
 # Changes (all in device/arduino/imola):
 #   1. BoardConfig.mk: no hard-coded slot in BOARD_KERNEL_CMDLINE; BOARD_SUPER_PARTITION_METADATA_DEVICE
@@ -22,8 +28,12 @@
 #   3. tools/package_qdl.py (package-qdl-ab.patch, on top of selinux-fixes.sh): GPT with efi 128 MB +
 #      linux_a/linux_b 192 MB each in the old efi space and rootfs renamed super (metadata, super and userdata
 #      do not move), per-slot U-Boot copies, the slot-picking boot.scr, linux.img for both slots
+#   4. device.mk: update_engine (+ update_engine_client on debug builds), AB_OTA_PARTITIONS += linux,
+#      PRODUCT_BUILD_GENERIC_OTA_PACKAGE
+#   5. Android.mk: linux.img as a radio image
 #
-# The new GPT needs one qdl flash (qdl-flash.sh --keep-data writes the GPT,
+# Build the OTA with `m-target.sh droid otapackage` (out-arm64/target/product/imola/lineage_imola-ota.zip) and
+# install it with ota-install.sh. The new GPT needs one qdl flash (qdl-flash.sh --keep-data writes the GPT,
 # boot_a/b, efi, linux_a/b and super; userdata survives because it does not move). Run after selinux-fixes.sh
 # and bootctrl-qti.sh, from a copy of build-host/ in the VM. Idempotent. Revert with `git checkout` of the
 # files above in device/arduino/imola (then re-run the scripts that edit them) and removing
@@ -61,8 +71,42 @@ cp -r "$HERE/sepolicy/ota" $D/sepolicy-ota
 if git -C $D apply --reverse --check "$HERE/package-qdl-ab.patch" 2>/dev/null; then :
 else git -C $D apply "$HERE/package-qdl-ab.patch" && echo "patched: $D/tools/package_qdl.py (A/B layout)"; fi
 
+# 4. device.mk
+grep -q 'build-host/ota-ab.sh' $D/device.mk || {
+  cat >> $D/device.mk <<'MK'
+
+# Local (build-host/ota-ab.sh): A/B OTA. update_engine applies payloads; linux (the boot image U-Boot loads
+# from linux_a/linux_b) is updated with the dynamic partitions.
+AB_OTA_PARTITIONS += linux
+PRODUCT_PACKAGES += update_engine
+PRODUCT_PACKAGES_DEBUG += update_engine_client
+# The build only offers otapackage to devices with a recovery fstab; this one has no recovery.
+PRODUCT_BUILD_GENERIC_OTA_PACKAGE := true
+MK
+  echo "patched: $D/device.mk (update_engine, linux OTA partition)"; }
+
+# 5. Android.mk
+grep -q 'IMOLA_LINUX_IMAGE' $D/Android.mk || {
+  python3 - $D/Android.mk <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = 'include $(call all-makefiles-under,$(LOCAL_PATH))\n'
+rule = ('# Local (build-host/ota-ab.sh): linux.img, the OTA image for linux_a/linux_b, is boot.img. As a radio\n'
+        '# image it reaches target-files RADIO/, where payload generation finds it.\n'
+        'IMOLA_LINUX_IMAGE := $(PRODUCT_OUT)/linux.img\n'
+        'INSTALLED_RADIOIMAGE_TARGET += $(IMOLA_LINUX_IMAGE)\n'
+        '$(IMOLA_LINUX_IMAGE): $(PRODUCT_OUT)/boot.img\n'
+        '\t$(hide) cp $< $@\n\n')
+assert anchor in s
+open(p, 'w').write(s.replace(anchor, rule + anchor))
+PY
+  echo "patched: $D/Android.mk (linux.img radio image)"; }
+
 grep -n -E 'slot_suffix|SUPER_PARTITION_METADATA_DEVICE|sepolicy-ota' $D/BoardConfig.mk
 ! grep -n -E 'androidboot.slot_suffix=_a|METADATA_DEVICE := rootfs' $D/BoardConfig.mk
 ls $D/sepolicy-ota
 git -C $D apply --reverse --check "$HERE/package-qdl-ab.patch"
+grep -n 'ota-ab.sh' -A4 $D/device.mk | head -6
+grep -n 'IMOLA_LINUX_IMAGE' $D/Android.mk
 echo "OTA AB OK"
