@@ -51,6 +51,9 @@ net_domain(imola_gpio)
 type imola_openocd_data_file, file_type, data_file_type;
 allow imola_gpio imola_openocd_data_file:dir r_dir_perms;
 allow imola_gpio imola_openocd_data_file:file r_file_perms;
+
+# OpenOCD binds its telnet and Tcl ports, which only listed domains may connect to (system_ext/public/openocd.te).
+allow imola_gpio openocd_port:tcp_socket name_bind;
 # glibc's loader (OpenOCD is a glibc binary) probes library paths, including /data/local/tmp.
 dontaudit imola_gpio shell_data_file:dir search;
 

@@ -1,0 +1,4 @@
+# OpenOCD's telnet and Tcl ports (sepolicy/system_ext/public/openocd.te). Port labels must be platform-side:
+# the vendor policy build (version_policy) rejects portcon.
+portcon tcp 4444 u:object_r:openocd_port:s0
+portcon tcp 6666 u:object_r:openocd_port:s0

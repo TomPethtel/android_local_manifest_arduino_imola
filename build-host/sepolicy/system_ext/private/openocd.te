@@ -1,0 +1,4 @@
+# adb forward to OpenOCD's ports (the Annex tools' ocd.py) on debug builds.
+userdebug_or_eng(`
+  allow adbd openocd_port:tcp_socket name_connect;
+')

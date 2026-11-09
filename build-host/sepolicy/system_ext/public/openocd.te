@@ -1,0 +1,5 @@
+# The OpenOCD daemon's telnet (4444) and Tcl (6666) ports on 127.0.0.1, labelled in system_ext/private/port_contexts.
+# OpenOCD runs as root and its Tcl can flash or halt the STM32, so the ports get a type outside port_type: AOSP
+# lets every netdomain (any app holding INTERNET) connect to port_type ports, and only domains granted here, in the
+# vendor policy and in Annex's policy may connect to this one. Public so platform-side domains can be granted it.
+type openocd_port;
