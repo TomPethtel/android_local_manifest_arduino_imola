@@ -291,7 +291,7 @@ fi
 echo "BINDGEN CLANG OK"
 
 # 21. BoardConfigKernel.mk only makes the kernel's O= path absolute when OUT_DIR is exactly "out". With any other
-#     relative OUT_DIR (we use out-arm64) the kernel make resolves O= against the kernel source dir, finds no .config
+#     relative OUT_DIR (out-imola; out-arm64 for the IQ-9075) the kernel make resolves O= against the kernel source dir, finds no .config
 #     there, and `olddefconfig` silently seeds it from /boot/config-$(uname -r) (CONFIG_SYSTEM_TRUSTED_KEYS=
 #     "debian/canonical-certs.pem" and all). Prefix every relative OUT_DIR.
 f=vendor/lineage/config/BoardConfigKernel.mk

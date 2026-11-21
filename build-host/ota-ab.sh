@@ -32,7 +32,7 @@
 #      PRODUCT_BUILD_GENERIC_OTA_PACKAGE
 #   5. Android.mk: linux.img as a radio image
 #
-# Build the OTA with `m-target.sh droid otapackage` (out-arm64/target/product/imola/lineage_imola-ota.zip) and
+# Build the OTA with `m-target.sh droid otapackage` (out-imola/target/product/imola/lineage_imola-ota.zip) and
 # install it with ota-install.sh. The new GPT needs one qdl flash (qdl-flash.sh --keep-data writes the GPT,
 # boot_a/b, efi, linux_a/b and super; userdata survives because it does not move). Run after selinux-fixes.sh
 # and bootctrl-qti.sh, from a copy of build-host/ in the VM. Idempotent. Revert with `git checkout` of the

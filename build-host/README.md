@@ -86,6 +86,11 @@ git clone --filter=blob:none --depth=1 -b mirror-goog-llvm-r596125-release \
 sudo apt-get install musl       # loader for the musl-linked arm64 build-tools (bison, m4, ckati, …)
 ```
 
+Imola builds in `out-imola`. Keep one `OUT_DIR` per product: the IQ-9075 port builds from this same tree into
+`out-arm64`, and while the two shared that directory (until 2026-11-21), each switch threw away the other
+product's Soong graph and its product-specific intermediates, about 1.5 h to rebuild either way. The compiler
+cache (`~/.ccache-arm64`) is still shared.
+
 Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch script covers:
 
 * `build/make`: `HOST_ARCH`/`HOST_PREBUILT_ARCH` on aarch64, host prebuilt prefix, clang paths via `HOST_PREBUILT_TAG`, `HOST_arm64.mk`.
@@ -95,7 +100,7 @@ Then `bash arm64-patches.sh` (idempotent) and `build-imola-arm64.sh`. The patch 
 * `prebuilts/rust-toolchain/linux-x86`: no from-source sysroot on musl_arm64; `vendor/lineage`: kernel host tools from the distro.
 * `bionic`: the kernel-header cleaner behind `generated_kernel_headers` loads libclang from the arm64 clang.
 
-Then `package-arm64.sh` wraps the device tree's `package_qdl.py` for the `out-arm64` layout and produces
+Then `package-arm64.sh` wraps the device tree's `package_qdl.py` for the `out-imola` layout and produces
 `arduino-images/` (512 MB boot partition, 4 GB root partition with the super image, Qualcomm firmware and
 EDL XMLs) plus a `.tar.zst` of it.
 
@@ -258,7 +263,7 @@ failure it resets, so ABL counts the attempt.
 
 ```bash
 bash ~/build-host/ota-ab.sh                      # once, after selinux-fixes.sh and bootctrl-qti.sh
-bash ~/build-host/m-target.sh droid otapackage   # -> out-arm64/target/product/imola/lineage_imola-ota.zip
+bash ~/build-host/m-target.sh droid otapackage   # -> out-imola/target/product/imola/lineage_imola-ota.zip
 ```
 
 The zip is a full OTA (about 1 GB). `linux.img` (a copy of `boot.img`) reaches target-files as a radio image:

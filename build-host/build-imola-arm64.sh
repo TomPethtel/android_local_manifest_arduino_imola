@@ -1,10 +1,11 @@
 #!/bin/bash
-# Native arm64 build of LineageOS 24 for imola. Separate OUT_DIR so the Rosetta/x86 build in out/ is untouched.
+# Native arm64 build of LineageOS 24 for imola, in its own OUT_DIR (out-imola): the Rosetta/x86 build in out/ and
+# the IQ-9075 build in out-arm64 share this tree, and a shared OUT_DIR loses the other product's incremental state.
 # Ubuntu's ~/.profile puts ~/bin (the uname->x86_64 shim) on PATH; take it off so the tree sees aarch64.
 set -o pipefail
 export PATH=$(printf "%s" "$PATH" | tr ":" "\n" | grep -vx "$HOME/bin" | paste -sd:)
 cd ~/lineage-24 || exit 1
-export OUT_DIR=out-arm64
+export OUT_DIR=out-imola
 export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache CCACHE_DIR=$HOME/.ccache-arm64
 export SOONG_INCREMENTAL_ANALYSIS=false SOONG_BUILD_GOGC=30
 export ALLOW_MISSING_DEPENDENCIES=true SKIP_ABI_CHECKS=true THINLTO_USE_MLGO=false
