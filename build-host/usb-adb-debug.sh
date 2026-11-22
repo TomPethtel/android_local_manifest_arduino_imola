@@ -16,6 +16,10 @@
 #   6. configfs gadgets bind only to a UDC that exists when init writes it (match_existing_only), and dwc3
 #      has no UDC while the port is a host. Booted with a hub attached, the boot-time write fails and adb
 #      never comes back on USB when the board is moved to a computer -> let the gadget wait for its UDC
+#   7. r8152 (Realtek USB Ethernet, common in USB-C docks) is built as a module but not in the load list,
+#      so a dock's Ethernet enumerates and nothing binds -> load it. r8152 then registers a wakeup source
+#      under the dwc3 host that nothing labels, and system_suspend is denied reading its stats (10 denials)
+#      -> label wakeup sources of USB devices on that host sysfs_wakeup
 # Idempotent. Revert with `git checkout` in kernel/arduino/imola and device/arduino/imola.
 set -euo pipefail
 cd ~/lineage-24
@@ -38,6 +42,11 @@ if n != s:
 EOF
 cfs=kernel/arduino/imola/drivers/usb/gadget/configfs.c
 grep -q '^	\.match_existing_only = 1,$' "$cfs" && { sed -i 's|^\t\.match_existing_only = 1,$|\t.match_existing_only = 0, /* Local: dual role, the UDC only exists in device mode; wait for it */|' "$cfs" && echo "patched: $cfs"; }
+mods=device/arduino/imola/shared/utils/dlkm_loader/vendor.modules.list.mk
+grep -q '^    r8152.ko' "$mods" || { sed -i 's/^    cdc_ncm.ko \\$/&\n    r8152.ko \\/' "$mods" && echo "patched: $mods (r8152)"; }
+fc=device/arduino/imola/sepolicy/file_contexts
+grep -q 'xhci-hcd' "$fc" || { printf '%s\n' '' '# Local (usb-adb-debug.sh): wakeup sources of USB devices on the dwc3 host, e.g. r8152 Ethernet' \
+  '/sys/devices/platform/soc@0/4ef8800\.usb/4e00000\.usb/xhci-hcd\.[0-9]+\.auto/usb[0-9]+(/[0-9]+-[0-9.]+(:[0-9]+\.[0-9]+)?)*/wakeup(/.*)?	u:object_r:sysfs_wakeup:s0' >> "$fc" && echo "patched: $fc (USB wakeup sources)"; }
 grep -n 'dr_mode' "$dts"; grep -n 'persist.sys.usb.config' "$mk"; sed -n 1,4p "$rc"; ! grep -nE '^    setprop sys.usb.config (none|\$)' "$rc"; ! grep -n 'logcat_kmsg' "$main"
-grep -n 'match_existing_only = 0' "$cfs"
+grep -n 'match_existing_only = 0' "$cfs"; grep -n '^    r8152.ko' "$mods"; grep -n 'xhci-hcd' "$fc"
 echo "USB ADB DEBUG OK"
