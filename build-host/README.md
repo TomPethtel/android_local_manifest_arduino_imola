@@ -128,9 +128,10 @@ Two device-tree fixes on top of the upstream port, applied by `imola-fixes.sh` (
   API level 202604; the tree ships shipping API level 36, so system_server died at startup with
   "Failed to create ashmem" and zygote restarted it every 5 s.
 
-Optional debug variant, `usb-adb-debug.sh`: puts the USB-C port in device mode with adb on it (the stock port
-keeps the port as a USB host with adb on TCP 5555), fixes the vendor usb rc resetting `sys.usb.config` to
-`none` after boot, and mirrors logcat errors into dmesg so they reach the serial console.
+Optional debug variant, `usb-adb-debug.sh`: makes the USB-C port dual role with adb on it while it is a device
+(the stock port is a fixed USB host with adb on TCP 5555), and fixes the vendor usb rc resetting
+`sys.usb.config` to `none` after boot. With `anx7625-typec.sh` the port picks its role from what is plugged in;
+see section 11.
 
 Serial console: JCTL pin 4 (TX), 6 (RX), 7 (GND), 1.8 V logic, 115200 8N1; an FTDI TTL232RG-VREG1V8 works
 directly. On macOS hold the port open or the baud rate resets: `exec 3<>$dev; stty -f $dev raw 115200; cat <&3`.
@@ -307,3 +308,37 @@ reasoning: `SHARED-SYSTEM-SCOPE.md`.
   section 4. For its OTA, copy `imola-ota.zip` to the Mac
   (`limactl shell aosp -- bash -c 'cat ~/lumina-builds/<dir>/imola-ota.zip' > imola-ota.zip`), then
   `ota-install.sh imola-ota.zip`.
+
+## 11. Dual-role USB-C (2026-11-21)
+
+The stock port is a fixed USB host, with adb on TCP 5555. `usb-adb-debug.sh` plus `anx7625-typec.sh` make it work
+the way a handset's does: a device (adb) when plugged into a computer, a host when a hub or accessory is plugged
+in. Both patch `~/lineage-24` in place, so every build from that tree carries them, the shared one (section 10)
+included.
+
+* **Who picks the role.** The ANX7625 (i2c-1 0x58) runs Type-C and PD in its own firmware and reports the data
+  role. The imola kernel's driver (6.18.32) only knew the display bridge. `anx7625-typec.patch` backports
+  upstream's Type-C support from the IQ-9075 tree (6.18.56): a typec port for the `connector` node, and
+  `usb_role_switch_set_role` on dwc3 (`usb@4e00000`) whenever the data role changes. dwc3 registers its role
+  switch only at `dr_mode = "otg"`, and the dts had `"host"`; without it the ANX7625 probe defers forever.
+* **adb after booting as a host.** A configfs gadget normally binds only to a UDC that exists when init writes
+  `UDC` (`match_existing_only = 1`). In host mode dwc3 has no UDC, so a board booted with a hub attached failed
+  that write, dropped the gadget driver and never came back on USB. `usb-adb-debug.sh` sets it to 0: the driver
+  stays registered (`/config/usb_gadget/g1/UDC` reads `4e00000.usb` while the port is a host) and binds when
+  dwc3 adds its gadget on the switch to device mode.
+* **Dock Ethernet.** `r8152` (Realtek USB Ethernet, in most USB-C docks) was built but never loaded, so it joins
+  the vendor_dlkm load list. Its wakeup source sits under the dwc3 host, which file_contexts didn't cover, and
+  system_suspend was denied reading it (10 denials a boot); a regex labels USB devices' wakeup nodes
+  `sysfs_wakeup`.
+* **Power.** The connector is `power-role = "sink"`: the board never supplies VBUS, so bus-powered accessories
+  need a powered hub or dock.
+* **USB HAL.** The board runs `android.hardware.usb-service.example`, a stub, so `dumpsys usb` shows port0 with
+  no data and no power whatever is plugged in. `UsbHostManager` still lists attached devices. The kernel's view
+  is `/sys/class/typec/port0/data_role` and `/sys/class/udc`.
+* **Counting denials.** In Greybus mode dmesg is flooded with gb-raw "Too much data in receive buffer", so
+  `selinux-audit.sh`, which reads dmesg, misses denials. Count them from logcat instead:
+  `adb logcat -d -b all | grep -c 'avc:  denied'`.
+
+Verified 2026-11-21 on board 2 with a VIA USB-C dock, booted with the dock attached: its hubs, a DYMO M25 scale
+(hidraw) and its Realtek Ethernet enumerate, enforcing, no new denials. Not yet verified: device mode on a
+computer, and switching device → host → device without a reboot.
