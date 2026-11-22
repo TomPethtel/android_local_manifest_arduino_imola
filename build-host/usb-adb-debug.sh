@@ -13,6 +13,9 @@
 #      may not read that property once SELinux enforces.
 #   5. removes the logcat_kmsg mirror earlier versions added: once the board booted it only crash-looped
 #      (logcat -f /dev/kmsg keeps exiting), restarting every minute and tripping flags_health_check
+#   6. configfs gadgets bind only to a UDC that exists when init writes it (match_existing_only), and dwc3
+#      has no UDC while the port is a host. Booted with a hub attached, the boot-time write fails and adb
+#      never comes back on USB when the board is moved to a computer -> let the gadget wait for its UDC
 # Idempotent. Revert with `git checkout` in kernel/arduino/imola and device/arduino/imola.
 set -euo pipefail
 cd ~/lineage-24
@@ -33,5 +36,8 @@ if n != s:
     open(p, 'w').write(n)
     print('patched: %s (removed logcat_kmsg)' % p)
 EOF
+cfs=kernel/arduino/imola/drivers/usb/gadget/configfs.c
+grep -q '^	\.match_existing_only = 1,$' "$cfs" && { sed -i 's|^\t\.match_existing_only = 1,$|\t.match_existing_only = 0, /* Local: dual role, the UDC only exists in device mode; wait for it */|' "$cfs" && echo "patched: $cfs"; }
 grep -n 'dr_mode' "$dts"; grep -n 'persist.sys.usb.config' "$mk"; sed -n 1,4p "$rc"; ! grep -nE '^    setprop sys.usb.config (none|\$)' "$rc"; ! grep -n 'logcat_kmsg' "$main"
+grep -n 'match_existing_only = 0' "$cfs"
 echo "USB ADB DEBUG OK"
