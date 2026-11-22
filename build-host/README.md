@@ -286,3 +286,24 @@ as the Updater app would; reboot to switch slots.
 **Not done.** No update server: the Updater app's `lineage.updater.uri` is unset, so OTAs go in with
 `ota-install.sh`. No incremental OTAs yet. Once, the board hard-reset during a 1 GB `adb push`, with the
 kernel log cut off mid-line at `arm-smmu c600`; a retry went through.
+
+## 10. One system build with the IQ-9075 (2026-11-21)
+
+The UNO Q and the IQ-9075 run the same LineageOS system side, so it is built once, as `lineage_lumina_arm64`
+(`device/lumina/lumina_arm64` in the lineage-iq9075 repo). Each board builds only its own parts. Scope and
+reasoning: `SHARED-SYSTEM-SCOPE.md`.
+
+* `shared-system.sh` adds `lineage_imola_vendor`. It inherits `lineage_imola` and switches the system, system_ext
+  and product images off, so its `target-files-package` makes vendor, vendor_dlkm, system_dlkm, `boot.img` and
+  `linux.img` without compiling the system side. Run it after the other scripts here. `lineage_imola` is
+  unchanged and still builds a whole image in `out-imola`. It also adds a block at the end of `BoardConfig.mk`
+  that drops system, system_ext and product from a vendor-only product's A/B list: the target-files step wants an
+  image for each one, and the merge adds them back from the system side.
+* lineage-iq9075's `build-host/build-lumina.sh` (in the VM, `~/build-lumina.sh`) builds the shared system in
+  `out-system-<variant>`, this board in `out-vendor-imola-<variant>`, and merges them with
+  `merge_target_files --rebuild-sepolicy` into `~/lumina-builds/imola-<variant>-<date>/`: `super.img`, `linux.img`,
+  `imola-ota.zip` and the merged target-files.
+* `package-arm64.sh ~/lumina-builds/imola-<variant>-<date>` packages a merged build for qdl, the same way as
+  section 4. For its OTA, copy `imola-ota.zip` to the Mac
+  (`limactl shell aosp -- bash -c 'cat ~/lumina-builds/<dir>/imola-ota.zip' > imola-ota.zip`), then
+  `ota-install.sh imola-ota.zip`.
