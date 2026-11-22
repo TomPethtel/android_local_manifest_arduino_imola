@@ -1,7 +1,9 @@
 #!/bin/bash
-# OPTIONAL debug variant: put the UNO Q's USB-C port in device mode with adb on it, instead of the port's
-# normal USB host role (device.mk: "TCP 5555 for network ADB; USB operates in host mode"). Three pieces:
-#   1. the dts overrides the SoC's dr_mode="otg" with "host"       -> "peripheral"
+# OPTIONAL debug variant: make the UNO Q's USB-C port dual role with adb on it when it is a device, instead of
+# the port's fixed USB host role (device.mk: "TCP 5555 for network ADB; USB operates in host mode"). Pieces:
+#   1. the dts overrides the SoC's dr_mode="otg" with "host"       -> back to "otg", so dwc3 registers its
+#      usb-role-switch (it starts as a device). The ANX7625 driver switches it once it has Type-C support
+#      (anx7625-typec.sh); until then the port stays a device.
 #   2. vendor persist.sys.usb.config=none                          -> adb
 #   3. nothing sets vendor.usb.controller, so init never binds the gadget to a UDC -> set it to the dwc3
 #      core (usb@4e00000 in qcm2290.dtsi) at boot
@@ -15,7 +17,7 @@
 set -euo pipefail
 cd ~/lineage-24
 dts=kernel/arduino/imola/arch/arm64/boot/dts/qcom/qrb2210-arduino-imola.dts
-grep -q 'dr_mode = "peripheral"' "$dts" || { sed -i 's/dr_mode = "host";/dr_mode = "peripheral"; \/* Local: adb over USB for debugging *\//' "$dts" && echo "patched: $dts"; }
+grep -q 'dr_mode = "otg"' "$dts" || { sed -i -E 's/dr_mode = "(host|peripheral)";.*$/dr_mode = "otg"; \/* Local: dual role, the ANX7625 picks host or device *\//' "$dts" && echo "patched: $dts"; }
 mk=device/arduino/imola/device.mk
 grep -q 'persist.sys.usb.config=adb' "$mk" || { sed -i 's/persist.sys.usb.config=none \\/persist.sys.usb.config=adb \\/' "$mk" && echo "patched: $mk"; }
 rc=device/arduino/imola/init.imola.usb.rc
